@@ -3,21 +3,24 @@ from __future__ import annotations
 import asyncio
 import urllib.robotparser
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
 import trafilatura
 import httpx
-from fastapi import FastAPI, Header, Query, Request
+from fastapi import Depends, FastAPI, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from .auth import Principal, authenticate
 from .config import settings
 from .discovery import DiscoveryError, DiscoveryFetchError, origin_for, robots, sitemap
 from .fetchers import EscalatingFetcher, FetchError
 from .metadata import extract_page_metadata
-from .models import ApiEnvelope, ApiKeyCreateRequest, FetchRequest, SearchRequest
+from .models import ApiEnvelope, ApiKeyCreateRequest, DocumentListRequest, FetchRequest, SearchRequest
 from .quality import ContentAssessment, assess_page_content
 from .safety import UnsafeUrlError
 from .storage import DocumentStore, StorageError
@@ -34,6 +37,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="OMA Fetcher", version="0.1.0", lifespan=lifespan, docs_url="/docs" if settings.api_docs_enabled else None, redoc_url="/redoc" if settings.api_docs_enabled else None)
+app.add_middleware(CORSMiddleware, allow_origins=list(settings.web_cors_origins), allow_credentials=False, allow_methods=["GET", "POST", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type", "Prefer"])
 fetcher = EscalatingFetcher(settings)
 store = DocumentStore(settings.storage_path, settings.storage_user_dict_path)
 
@@ -97,15 +101,15 @@ async def list_api_keys(request: Request):
 
 
 @app.delete("/api/keys/{key_id}", response_model=ApiEnvelope)
-async def revoke_api_key(request: Request, key_id: int):
+async def delete_api_key(request: Request, key_id: int):
     denied = require_admin(request)
     if denied:
         return denied
     try:
-        revoked = await asyncio.to_thread(store.revoke_api_key, key_id)
-        if not revoked:
-            return envelope(4040, "API key not found or already revoked", status_code=404)
-        return envelope(0, "ok", {"id": key_id, "revoked": True})
+        deleted = await asyncio.to_thread(store.delete_api_key, key_id)
+        if not deleted:
+            return envelope(4040, "API key not found", status_code=404)
+        return envelope(0, "ok", {"id": key_id, "deleted": True})
     except StorageError as exc:
         return envelope(4004, str(exc), status_code=503)
 
@@ -302,6 +306,54 @@ async def search_documents(request: Request, payload: SearchRequest):
         return envelope(4002, str(exc), meta={"storage_available": store.available}, status_code=503)
 
 
+@app.get("/api/documents", response_model=ApiEnvelope)
+async def list_documents(request: Request, filters: DocumentListRequest = Depends()):
+    denied = require_scope(request, "search")
+    if denied:
+        return denied
+    try:
+        rows, total = await asyncio.to_thread(
+            store.list_documents,
+            page=filters.page,
+            page_size=filters.page_size,
+            title=filters.title,
+            sitename=filters.sitename,
+            tags=filters.tags,
+            content=filters.content,
+        )
+        return envelope(0, "ok", rows, {"page": filters.page, "page_size": filters.page_size, "total": total, "pages": (total + filters.page_size - 1) // filters.page_size})
+    except StorageError as exc:
+        return envelope(4002, str(exc), meta={"storage_available": store.available}, status_code=503)
+
+
+@app.get("/api/documents/{document_id}", response_model=ApiEnvelope)
+async def get_document(request: Request, document_id: int):
+    denied = require_scope(request, "search")
+    if denied:
+        return denied
+    try:
+        document = await asyncio.to_thread(store.get_document, document_id)
+        if document is None:
+            return envelope(4041, "document not found", status_code=404)
+        return envelope(0, "ok", document)
+    except StorageError as exc:
+        return envelope(4002, str(exc), status_code=503)
+
+
+@app.delete("/api/documents/{document_id}", response_model=ApiEnvelope)
+async def delete_document(request: Request, document_id: int):
+    denied = require_scope(request, "fetch")
+    if denied:
+        return denied
+    try:
+        deleted = await asyncio.to_thread(store.delete_document, document_id)
+        if not deleted:
+            return envelope(4041, "document not found", status_code=404)
+        return envelope(0, "ok", {"id": document_id, "deleted": True})
+    except StorageError as exc:
+        return envelope(4002, str(exc), status_code=503)
+
+
 @app.get("/api/robots", response_model=ApiEnvelope)
 async def get_robots(request: Request, url: str):
     denied = require_scope(request, "fetch")
@@ -328,3 +380,8 @@ async def get_sitemap(request: Request, url: str):
         return envelope(1002, str(exc), status_code=400)
     except DiscoveryError as exc:
         return envelope(3002, str(exc), status_code=404)
+
+
+WEB_ROOT = Path(__file__).resolve().parent.parent / "web"
+if WEB_ROOT.is_dir():
+    app.mount("/", StaticFiles(directory=WEB_ROOT, html=True), name="web")

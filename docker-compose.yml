@@ -18,6 +18,7 @@ services:
       API_ADMIN_KEY: ${API_ADMIN_KEY:-}
       API_KEY_PEPPER: ${API_KEY_PEPPER:-}
       API_DOCS_ENABLED: ${API_DOCS_ENABLED:-true}
+      WEB_CORS_ORIGINS: ${WEB_CORS_ORIGINS:-}
     volumes:
       - ./data:/data
       - ./dictionaries:/dictionaries:ro

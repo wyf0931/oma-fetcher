@@ -39,8 +39,9 @@ pulls the published GHCR image. It **does not build Docker images locally**.
 curl -fsSL https://raw.githubusercontent.com/wyf0931/oma-fetcher/main/scripts/install-macos.sh | bash
 ```
 
-The service is then available at `http://127.0.0.1:7890`, with API docs at
-`/docs`. To inspect the script before running it:
+The service and optional Reader library Web UI are both available at
+`http://127.0.0.1:7890` (UI at `/`, API docs at `/docs`).
+To inspect the script before running it:
 
 ```sh
 curl -fsSLO https://raw.githubusercontent.com/wyf0931/oma-fetcher/main/scripts/install-macos.sh
@@ -66,9 +67,9 @@ uv sync
 uv run uvicorn app.main:app --host 127.0.0.1 --port 7890
 ```
 
-For developer-local work, manage a background **non-Docker** instance with the
-project helper. It runs `uvicorn` through `uv`, and stores its PID and logs in
-the system temporary directory rather than the repository:
+For developer-local work, manage the API and static Web UI together with the
+project helper. It runs `uvicorn` and Python's static server directly (no
+Docker), and stores their PIDs and logs in the system temporary directory:
 
 ```sh
 bin/ops.sh start                 # http://127.0.0.1:7890
@@ -80,6 +81,13 @@ bin/ops.sh start -p 8003         # choose a different local port
 bin/ops.sh status -p 8003
 bin/ops.sh restart -p 8003
 bin/ops.sh stop -p 8003
+```
+
+The API and Web UI use the same default port, 7890. Use `-p` to move both
+together when the port is occupied:
+
+```sh
+bin/ops.sh restart -p 8003
 ```
 
 In another terminal:
@@ -104,6 +112,10 @@ the primary signal: `200` is healthy/ready and `503` means not ready.
 curl -fsS http://127.0.0.1:7890/livez | jq
 curl -fsS http://127.0.0.1:7890/readyz | jq
 ```
+
+Open `http://127.0.0.1:7890/` for the separate Reader library UI. It provides
+Dataset and Keys pages, Bearer-key reuse, table filtering/pagination, document
+details/delete, and key create/copy/delete.
 
 If port 7890 is already in use, choose another port such as 8003 and use that
 port in the commands below. Interactive OpenAPI documentation is available at

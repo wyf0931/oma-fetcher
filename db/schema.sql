@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
     id              INTEGER PRIMARY KEY,
     name            TEXT NOT NULL,
     key_prefix      TEXT NOT NULL UNIQUE,
+    key_suffix      TEXT,
     secret_hmac     TEXT NOT NULL UNIQUE,
     scopes_json     TEXT NOT NULL,
     created_at      TEXT NOT NULL,
