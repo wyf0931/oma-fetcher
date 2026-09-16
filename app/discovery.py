@@ -13,7 +13,7 @@ from xml.etree import ElementTree
 import httpx
 
 from .config import Settings
-from .safety import validate_public_url
+from .safety import safe_redirect_target, validate_public_url
 
 if TYPE_CHECKING:
     from .storage import DocumentStore, FetchRoute
@@ -74,15 +74,22 @@ async def _get(url: str, config: Settings, timeout: float = 15, preferred_strate
         options = {
             "impersonate": "chrome",
             "timeout": timeout,
-            "allow_redirects": True,
+            "allow_redirects": False,
             "headers": {"Accept-Encoding": "identity"},
         }
         if config.proxy_mapping:
             options["proxies"] = config.proxy_mapping
-        fetched = requests.get(
-            url,
-            **options,
-        )
+        current_url = url
+        for _ in range(6):
+            fetched = requests.get(current_url, **options)
+            if fetched.status_code not in {301, 302, 303, 307, 308}:
+                break
+            location = fetched.headers.get("location")
+            if not location:
+                break
+            current_url = safe_redirect_target(current_url, location, allow_private=config.allow_private_networks)
+        else:
+            raise DiscoveryError("redirect limit exceeded")
         return httpx.Response(
             fetched.status_code,
             content=fetched.content,
@@ -119,8 +126,17 @@ async def _get(url: str, config: Settings, timeout: float = 15, preferred_strate
         )
 
     async def httpx_get() -> httpx.Response:
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers={"User-Agent": config.user_agent}, proxy=config.active_proxy_url, trust_env=False) as client:
-            return await client.get(url)
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False, headers={"User-Agent": config.user_agent}, proxy=config.active_proxy_url, trust_env=False) as client:
+            current_url = url
+            for _ in range(6):
+                response = await client.get(current_url)
+                if response.status_code not in {301, 302, 303, 307, 308}:
+                    return response
+                location = response.headers.get("location")
+                if not location:
+                    return response
+                current_url = safe_redirect_target(current_url, location, allow_private=config.allow_private_networks)
+            raise DiscoveryError("redirect limit exceeded")
 
     fetchers = {
         "httpx": httpx_get,

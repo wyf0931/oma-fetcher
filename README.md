@@ -367,6 +367,37 @@ Private, loopback, link-local, multicast, and other non-routable targets are
 rejected by default. `/api/fetch` enforces robots rules by default. Configure
 the documented variables in `.env.example` only for a trusted deployment.
 
+## API authentication
+
+API authentication is opt-in for local development and should be enabled when
+the service is reachable beyond localhost:
+
+```dotenv
+API_AUTH_ENABLED=on
+API_ADMIN_KEY=<at-least-32-random-characters>
+API_KEY_PEPPER=<different-at-least-32-random-secret>
+```
+
+When enabled, all `/api/*` endpoints require `Authorization: Bearer <token>`.
+Health probes remain anonymous. `API_ADMIN_KEY` exists only in the environment;
+client keys created through `/api/keys` are shown once and stored in SQLite only
+as HMACs.
+
+Create and manage client keys with the administrator key:
+
+```sh
+curl -sS -X POST 'http://127.0.0.1:7890/api/keys' \
+  -H "Authorization: Bearer $API_ADMIN_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"research-agent","scopes":["fetch","search"]}' | jq
+
+curl -sS 'http://127.0.0.1:7890/api/keys' \
+  -H "Authorization: Bearer $API_ADMIN_KEY" | jq
+```
+
+Treat the returned client token like a password; it cannot be recovered after
+the create response. Do not put keys in query strings or commit them to `.env`.
+
 ## Document store configuration
 
 The direct-development database defaults to `data/research.db`; `data/` is

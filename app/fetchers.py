@@ -10,7 +10,7 @@ from typing import Literal
 import httpx
 
 from .config import Settings
-from .safety import validate_public_url
+from .safety import safe_redirect_target, validate_public_url
 
 
 class FetchError(RuntimeError):
@@ -88,8 +88,18 @@ class EscalatingFetcher:
 
     async def _httpx(self, url: str, timeout: float) -> FetchResult:
         headers = {"User-Agent": self.config.user_agent, "Accept": "text/html,application/xhtml+xml"}
-        async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=timeout, proxy=self.config.active_proxy_url, trust_env=False) as client:
-            response = await client.get(url)
+        async with httpx.AsyncClient(headers=headers, follow_redirects=False, timeout=timeout, proxy=self.config.active_proxy_url, trust_env=False) as client:
+            current_url = url
+            for _ in range(6):
+                response = await client.get(current_url)
+                if response.status_code not in {301, 302, 303, 307, 308}:
+                    break
+                location = response.headers.get("location")
+                if not location:
+                    break
+                current_url = safe_redirect_target(current_url, location, allow_private=self.config.allow_private_networks)
+            else:
+                raise FetchError("redirect limit exceeded")
             content = response.content[: self.config.max_response_bytes]
         return FetchResult(content.decode(response.encoding or "utf-8", errors="replace"), str(response.url), response.status_code, "httpx", response.headers.get("content-type", ""))
 
@@ -100,7 +110,18 @@ class EscalatingFetcher:
             options = {"impersonate": "chrome", "timeout": timeout, "allow_redirects": True}
             if self.config.proxy_mapping:
                 options["proxies"] = self.config.proxy_mapping
-            response = requests.get(url, **options)
+            options["allow_redirects"] = False
+            current_url = url
+            for _ in range(6):
+                response = requests.get(current_url, **options)
+                if response.status_code not in {301, 302, 303, 307, 308}:
+                    break
+                location = response.headers.get("location")
+                if not location:
+                    break
+                current_url = safe_redirect_target(current_url, location, allow_private=self.config.allow_private_networks)
+            else:
+                raise FetchError("redirect limit exceeded")
             return FetchResult(response.content[: self.config.max_response_bytes].decode("utf-8", errors="replace"), response.url, response.status_code, "curl_cffi", response.headers.get("content-type", ""))
         return await asyncio.to_thread(run)
 

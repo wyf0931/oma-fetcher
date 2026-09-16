@@ -14,6 +14,10 @@ services:
       STORAGE_DB_PATH: /data/research.db
       STORAGE_USER_DICT_PATH: /dictionaries/custom.txt
       STORAGE_SAVE_DEFAULT: ${STORAGE_SAVE_DEFAULT:-off}
+      API_AUTH_ENABLED: ${API_AUTH_ENABLED:-off}
+      API_ADMIN_KEY: ${API_ADMIN_KEY:-}
+      API_KEY_PEPPER: ${API_KEY_PEPPER:-}
+      API_DOCS_ENABLED: ${API_DOCS_ENABLED:-true}
     volumes:
       - ./data:/data
       - ./dictionaries:/dictionaries:ro

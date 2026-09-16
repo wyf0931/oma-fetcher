@@ -40,6 +40,20 @@ CREATE TABLE IF NOT EXISTS fetches (
 CREATE INDEX IF NOT EXISTS idx_fetches_document ON fetches(document_id);
 CREATE INDEX IF NOT EXISTS idx_fetches_fetched_at ON fetches(fetched_at);
 
+CREATE TABLE IF NOT EXISTS api_keys (
+    id              INTEGER PRIMARY KEY,
+    name            TEXT NOT NULL,
+    key_prefix      TEXT NOT NULL UNIQUE,
+    secret_hmac     TEXT NOT NULL UNIQUE,
+    scopes_json     TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    expires_at      TEXT,
+    revoked_at      TEXT,
+    last_used_at    TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_keys_active ON api_keys(revoked_at, expires_at);
+
 CREATE TABLE IF NOT EXISTS fetch_routes (
     hostname            TEXT NOT NULL,
     target_kind         TEXT NOT NULL,

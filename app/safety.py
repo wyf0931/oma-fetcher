@@ -2,11 +2,17 @@ from __future__ import annotations
 
 import ipaddress
 import socket
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 
 class UnsafeUrlError(ValueError):
     pass
+
+
+def safe_redirect_target(current_url: str, location: str, *, allow_private: bool) -> str:
+    target = urljoin(current_url, location)
+    validate_public_url(target, allow_private=allow_private)
+    return target
 
 
 def validate_public_url(url: str, *, allow_private: bool) -> None:
@@ -25,4 +31,3 @@ def validate_public_url(url: str, *, allow_private: bool) -> None:
         ip = ipaddress.ip_address(address)
         if not ip.is_global:
             raise UnsafeUrlError("private or non-routable network targets are not allowed")
-

@@ -1,6 +1,6 @@
 import pytest
 
-from app.safety import UnsafeUrlError, validate_public_url
+from app.safety import UnsafeUrlError, safe_redirect_target, validate_public_url
 from app.config import Settings
 
 
@@ -26,3 +26,8 @@ def test_authenticated_proxy_mapping_redacts_credentials() -> None:
         "password": "proxy-password",
     }
     assert "proxy-password" not in config.redact("failed through http://proxy-user:proxy-password@proxy.example.test:80/")
+
+
+def test_redirect_to_private_target_is_rejected() -> None:
+    with pytest.raises(UnsafeUrlError):
+        safe_redirect_target("https://example.com/page", "http://127.0.0.1:7890/", allow_private=False)

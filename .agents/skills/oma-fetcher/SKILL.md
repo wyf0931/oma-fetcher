@@ -48,6 +48,12 @@ Check health before making a request:
 curl -sS --fail-with-body "$OMA_FETCHER_BASE_URL/healthz" | jq
 ```
 
+For a non-local deployment with `API_AUTH_ENABLED=on`, send
+`Authorization: Bearer <client-token>` on every `/api/*` request. Health probes
+remain anonymous. Create keys only with the environment administrator key via
+`POST /api/keys`; the plaintext client token is returned once and is never
+recoverable from SQLite.
+
 ## Deploy on a new macOS machine
 
 The repository ships a one-command installer for users who have not installed

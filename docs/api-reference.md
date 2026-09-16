@@ -89,3 +89,20 @@ documents, count, truncation state, and robots discovery details.
 | `/readyz` | SQLite store initialized and service is ready. | Store unavailable. |
 | `/healthz` | Alias of `/readyz`. | Store unavailable. |
 | `/health` | Alias of `/readyz`. | Store unavailable. |
+
+## Authentication
+
+Set `API_AUTH_ENABLED=on` for non-local deployments. All `/api/*` endpoints
+then require `Authorization: Bearer <token>`; `/livez`, `/readyz`, `/healthz`,
+and `/health` stay anonymous for probes. The environment-only administrator key
+can manage SQLite client keys:
+
+```text
+POST   /api/keys          create (admin scope)
+GET    /api/keys          list metadata (admin scope)
+DELETE /api/keys/{id}     revoke (admin scope)
+```
+
+Client keys are returned only at creation and stored as HMACs. Scopes are
+`fetch`, `search`, and `admin`; API requests without the required scope receive
+`403`.
