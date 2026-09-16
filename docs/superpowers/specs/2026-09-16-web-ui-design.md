@@ -60,6 +60,6 @@ does not bypass scopes or expose the environment admin key.
 
 Serve `web/` through the lightweight static server in Docker Compose, configure
 the API base URL via an injected setting, and verify Dataset/Keys navigation,
-auth persistence, pagination, search, create/copy/revoke, error states, and
+auth persistence, pagination, search, create/copy/delete, error states, and
 responsive layout in a browser. Run backend tests and an automated browser
 smoke check before release.

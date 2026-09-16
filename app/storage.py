@@ -321,13 +321,13 @@ class DocumentStore:
             result.append(item)
         return result
 
-    def revoke_api_key(self, key_id: int) -> bool:
+    def delete_api_key(self, key_id: int) -> bool:
         self._require_available()
         try:
             with self._connect() as connection:
                 cursor = connection.execute(
-                    "UPDATE api_keys SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL",
-                    (datetime.now(UTC).isoformat(), key_id),
+                    "DELETE FROM api_keys WHERE id = ?",
+                    (key_id,),
                 )
                 return cursor.rowcount == 1
         except sqlite3.Error as exc:

@@ -113,9 +113,10 @@ can manage SQLite client keys:
 ```text
 POST   /api/keys          create (admin scope)
 GET    /api/keys          list metadata (admin scope)
-DELETE /api/keys/{id}     revoke (admin scope)
+DELETE /api/keys/{id}     delete permanently (admin scope)
 ```
 
-Client keys are returned only at creation and stored as HMACs. Scopes are
+Client keys are returned only at creation and stored as HMACs. Deleting a key
+physically removes it from SQLite and immediately invalidates it. Scopes are
 `fetch`, `search`, and `admin`; API requests without the required scope receive
 `403`.

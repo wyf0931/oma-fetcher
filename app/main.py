@@ -101,15 +101,15 @@ async def list_api_keys(request: Request):
 
 
 @app.delete("/api/keys/{key_id}", response_model=ApiEnvelope)
-async def revoke_api_key(request: Request, key_id: int):
+async def delete_api_key(request: Request, key_id: int):
     denied = require_admin(request)
     if denied:
         return denied
     try:
-        revoked = await asyncio.to_thread(store.revoke_api_key, key_id)
-        if not revoked:
-            return envelope(4040, "API key not found or already revoked", status_code=404)
-        return envelope(0, "ok", {"id": key_id, "revoked": True})
+        deleted = await asyncio.to_thread(store.delete_api_key, key_id)
+        if not deleted:
+            return envelope(4040, "API key not found", status_code=404)
+        return envelope(0, "ok", {"id": key_id, "deleted": True})
     except StorageError as exc:
         return envelope(4004, str(exc), status_code=503)
 
