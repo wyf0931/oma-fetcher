@@ -85,6 +85,23 @@ In another terminal:
 curl -sS http://127.0.0.1:7890/healthz | jq
 ```
 
+### Health probes
+
+Use the specific endpoint which matches the caller's purpose. HTTP status is
+the primary signal: `200` is healthy/ready and `503` means not ready.
+
+| Endpoint | Use |
+| --- | --- |
+| `/livez` | Process liveness only; no SQLite or external dependency check. |
+| `/readyz` | Ready to serve requests; verifies the SQLite Document Store initialized. |
+| `/healthz` | Compatibility alias for `/readyz`. |
+| `/health` | Compatibility alias for `/readyz`. |
+
+```sh
+curl -fsS http://127.0.0.1:7890/livez | jq
+curl -fsS http://127.0.0.1:7890/readyz | jq
+```
+
 If port 7890 is already in use, choose another port such as 8003 and use that
 port in the commands below. Interactive OpenAPI documentation is available at
 `/docs`.

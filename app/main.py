@@ -53,8 +53,38 @@ async def validation_error(_: Request, exc: RequestValidationError):
 
 
 @app.get("/healthz", response_model=ApiEnvelope)
-async def healthz() -> ApiEnvelope:
-    return ApiEnvelope(code=0, message="ok", data="healthy")
+async def healthz() -> JSONResponse:
+    return readiness_response()
+
+
+@app.get("/health", response_model=ApiEnvelope)
+async def health() -> JSONResponse:
+    """Compatibility alias for callers using the common /health path."""
+    return readiness_response()
+
+
+@app.get("/livez", response_model=ApiEnvelope)
+async def livez() -> JSONResponse:
+    """Low-cost liveness probe: no database or external dependency checks."""
+    return envelope(0, "ok", {"status": "live"})
+
+
+@app.get("/readyz", response_model=ApiEnvelope)
+async def readyz() -> JSONResponse:
+    """Readiness probe: the document store must be initialized before serving traffic."""
+    return readiness_response()
+
+
+def readiness_response() -> JSONResponse:
+    if store.available:
+        return envelope(0, "ok", {"status": "ready", "storage_ready": True})
+    return envelope(
+        4003,
+        "service is not ready",
+        {"status": "not_ready", "storage_ready": False},
+        meta={"storage_error": store.initialization_error},
+        status_code=503,
+    )
 
 
 @app.post("/api/fetch", response_model=ApiEnvelope)
