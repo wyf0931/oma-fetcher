@@ -88,7 +88,7 @@ Trafilatura format other than Markdown. Do not use `strategy` unless diagnosing
 a particular layer; `auto` is the normal choice.
 
 Every successful fetch returns Trafilatura's semantic metadata directly in
-`meta.page_metadata`: title, author, description, date, sitename, categories,
+`meta.page`: title, author, description, date, sitename, categories,
 tags, image, language, page type, URL, hostname, fingerprint, ID, and license.
 Keep content in `data` and inspect metadata separately:
 
@@ -96,7 +96,7 @@ Keep content in `data` and inspect metadata separately:
 curl -sS -X POST "$OMA_FETCHER_BASE_URL/api/fetch" \
   -H 'Content-Type: application/json' \
   -d '{"url":"https://example.com/article","timeout_seconds":90}' \
-  | jq '.meta.page_metadata'
+  | jq '.meta.page'
 ```
 
 ## Read robots.txt

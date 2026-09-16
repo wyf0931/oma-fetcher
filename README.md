@@ -158,13 +158,13 @@ curl -sS -X POST 'http://127.0.0.1:7890/api/fetch' \
 ```
 
 Successful fetch responses also contain Trafilatura's semantic metadata
-directly in `meta.page_metadata`:
+directly in `meta.page`:
 
 ```sh
 curl -sS -X POST 'http://127.0.0.1:7890/api/fetch' \
   -H 'Content-Type: application/json' \
   -d '{"url":"https://www.iso.org/standard/87210.html","timeout_seconds":90}' \
-  | jq '.meta.page_metadata | {title, author, date, description, sitename, categories, tags, image, pagetype, language, url}'
+  | jq '.meta.page | {title, author, date, description, sitename, categories, tags, image, pagetype, language, url}'
 ```
 
 Available fields include title, author, description, date, sitename, categories,

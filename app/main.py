@@ -71,7 +71,7 @@ async def fetch_page(payload: FetchRequest):
         result, attempts = await fetcher.fetch(url, payload.timeout_seconds, payload.strategy, accept=has_extractable_content)
         if not extracted:  # Defensive: `accept` guarantees this branch is unreachable.
             return envelope(2002, "page fetched but no main content could be extracted", meta={"attempts": attempts}, status_code=422)
-        return envelope(0, "ok", extracted, {"final_url": result.final_url, "strategy": result.strategy, "status_code": result.status_code, "content_type": result.content_type, "attempts": attempts, "page_metadata": page_metadata or {}})
+        return envelope(0, "ok", extracted, {"final_url": result.final_url, "strategy": result.strategy, "status_code": result.status_code, "content_type": result.content_type, "attempts": attempts, "page": page_metadata or {}})
     except UnsafeUrlError as exc:
         return envelope(1002, str(exc), status_code=400)
     except (FetchError, DiscoveryError, httpx.HTTPError) as exc:
