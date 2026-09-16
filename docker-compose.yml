@@ -9,9 +9,8 @@ services:
       FETCHER_ALLOW_PRIVATE_NETWORKS: "false"
       FETCHER_MAX_RESPONSE_BYTES: "5242880"
       FETCHER_SITEMAP_MAX_URLS: "10000"
-      HTTP_PROXY: ${FETCHER_RUNTIME_PROXY:-}
-      HTTPS_PROXY: ${FETCHER_RUNTIME_PROXY:-}
-      ALL_PROXY: ${FETCHER_RUNTIME_PROXY:-}
+      PROXY_ENABLED: ${PROXY_ENABLED:-off}
+      PROXY_URL: ${PROXY_URL:-}
     init: true
     shm_size: 1gb
     restart: unless-stopped
