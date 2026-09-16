@@ -115,7 +115,7 @@ curl -fsS http://127.0.0.1:7890/readyz | jq
 
 Open `http://127.0.0.1:7890/` for the separate Reader library UI. It provides
 Dataset and Keys pages, Bearer-key reuse, table filtering/pagination, document
-details/delete, and key create/copy/revoke.
+details/delete, and key create/copy/delete.
 
 If port 7890 is already in use, choose another port such as 8003 and use that
 port in the commands below. Interactive OpenAPI documentation is available at
