@@ -12,11 +12,12 @@ from fastapi import FastAPI, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from .auth import Principal, authenticate
 from .config import settings
 from .discovery import DiscoveryError, DiscoveryFetchError, origin_for, robots, sitemap
 from .fetchers import EscalatingFetcher, FetchError
 from .metadata import extract_page_metadata
-from .models import ApiEnvelope, FetchRequest, SearchRequest
+from .models import ApiEnvelope, ApiKeyCreateRequest, FetchRequest, SearchRequest
 from .quality import ContentAssessment, assess_page_content
 from .safety import UnsafeUrlError
 from .storage import DocumentStore, StorageError
@@ -32,9 +33,81 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="OMA Fetcher", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="OMA Fetcher", version="0.1.0", lifespan=lifespan, docs_url="/docs" if settings.api_docs_enabled else None, redoc_url="/redoc" if settings.api_docs_enabled else None)
 fetcher = EscalatingFetcher(settings)
 store = DocumentStore(settings.storage_path, settings.storage_user_dict_path)
+
+
+@app.middleware("http")
+async def api_authentication(request: Request, call_next):
+    if settings.api_auth_enabled and request.url.path.startswith("/api/"):
+        principal = authenticate(request.headers.get("authorization"), settings, store)
+        if principal is None:
+            return envelope(401, "authentication required", meta={"scheme": "Bearer"}, status_code=401, headers={"WWW-Authenticate": "Bearer"})
+        request.state.principal = principal
+    return await call_next(request)
+
+
+def require_scope(request: Request, scope: str) -> JSONResponse | None:
+    if not settings.api_auth_enabled:
+        return None
+    principal: Principal | None = getattr(request.state, "principal", None)
+    if principal is None or (not principal.is_admin and scope not in principal.scopes):
+        return envelope(403, "insufficient scope", meta={"required_scope": scope}, status_code=403)
+    return None
+
+
+def require_admin(request: Request) -> JSONResponse | None:
+    if not settings.api_auth_enabled:
+        return None
+    principal: Principal | None = getattr(request.state, "principal", None)
+    if principal is None or not principal.is_admin:
+        return envelope(403, "administrator key required", status_code=403)
+    return None
+
+
+@app.post("/api/keys", response_model=ApiEnvelope)
+async def create_api_key(request: Request, payload: ApiKeyCreateRequest):
+    denied = require_admin(request)
+    if denied:
+        return denied
+    try:
+        token, metadata = await asyncio.to_thread(
+            store.create_api_key,
+            name=payload.name,
+            scopes=list(payload.scopes),
+            expires_at=payload.expires_at.isoformat() if payload.expires_at else None,
+            pepper=settings.api_key_pepper,
+        )
+        metadata["token"] = token
+        return envelope(0, "ok", metadata)
+    except StorageError as exc:
+        return envelope(4004, str(exc), status_code=503)
+
+
+@app.get("/api/keys", response_model=ApiEnvelope)
+async def list_api_keys(request: Request):
+    denied = require_admin(request)
+    if denied:
+        return denied
+    try:
+        return envelope(0, "ok", await asyncio.to_thread(store.list_api_keys))
+    except StorageError as exc:
+        return envelope(4004, str(exc), status_code=503)
+
+
+@app.delete("/api/keys/{key_id}", response_model=ApiEnvelope)
+async def revoke_api_key(request: Request, key_id: int):
+    denied = require_admin(request)
+    if denied:
+        return denied
+    try:
+        revoked = await asyncio.to_thread(store.revoke_api_key, key_id)
+        if not revoked:
+            return envelope(4040, "API key not found or already revoked", status_code=404)
+        return envelope(0, "ok", {"id": key_id, "revoked": True})
+    except StorageError as exc:
+        return envelope(4004, str(exc), status_code=503)
 
 
 def persistence_preference(query_value: bool | None, prefer: str | None, default: bool | None = None) -> tuple[bool, str]:
@@ -88,7 +161,10 @@ def readiness_response() -> JSONResponse:
 
 
 @app.post("/api/fetch", response_model=ApiEnvelope)
-async def fetch_page(payload: FetchRequest, persist: bool | None = Query(default=None), prefer: str | None = Header(default=None)):
+async def fetch_page(request: Request, payload: FetchRequest, persist: bool | None = Query(default=None), prefer: str | None = Header(default=None)):
+    denied = require_scope(request, "fetch")
+    if denied:
+        return denied
     url = str(payload.url)
     try:
         if settings.enforce_robots:
@@ -208,7 +284,10 @@ async def fetch_page(payload: FetchRequest, persist: bool | None = Query(default
 
 
 @app.post("/api/search", response_model=ApiEnvelope)
-async def search_documents(payload: SearchRequest):
+async def search_documents(request: Request, payload: SearchRequest):
+    denied = require_scope(request, "search")
+    if denied:
+        return denied
     try:
         results = await asyncio.to_thread(
             store.search,
@@ -224,7 +303,10 @@ async def search_documents(payload: SearchRequest):
 
 
 @app.get("/api/robots", response_model=ApiEnvelope)
-async def get_robots(url: str):
+async def get_robots(request: Request, url: str):
+    denied = require_scope(request, "fetch")
+    if denied:
+        return denied
     try:
         body, meta = await robots(url, settings, store)
         return envelope(0, "ok", body, meta)
@@ -235,7 +317,10 @@ async def get_robots(url: str):
 
 
 @app.get("/api/sitemap", response_model=ApiEnvelope)
-async def get_sitemap(url: str):
+async def get_sitemap(request: Request, url: str):
+    denied = require_scope(request, "fetch")
+    if denied:
+        return denied
     try:
         body, meta = await sitemap(url, settings, store)
         return envelope(0, "ok", body, meta)

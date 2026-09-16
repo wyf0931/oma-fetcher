@@ -23,6 +23,10 @@ class Settings:
     storage_save_default: bool = field(default_factory=lambda: _as_bool("STORAGE_SAVE_DEFAULT", False))
     storage_user_dict_path: str = field(default_factory=lambda: os.getenv("STORAGE_USER_DICT_PATH", "dictionaries/custom.txt"))
     fetch_route_ttl_hours: int = field(default_factory=lambda: int(os.getenv("FETCH_ROUTE_TTL_HOURS", "168")))
+    api_auth_enabled: bool = field(default_factory=lambda: _as_bool("API_AUTH_ENABLED", False))
+    api_admin_key: str = field(default_factory=lambda: os.getenv("API_ADMIN_KEY", "").strip())
+    api_key_pepper: str = field(default_factory=lambda: os.getenv("API_KEY_PEPPER", "").strip())
+    api_docs_enabled: bool = field(default_factory=lambda: _as_bool("API_DOCS_ENABLED", True))
     proxy_enabled: bool = field(default_factory=lambda: _as_bool("PROXY_ENABLED", False))
     proxy_url: str = field(default_factory=lambda: os.getenv("PROXY_URL", "").strip())
 
@@ -31,6 +35,8 @@ class Settings:
             raise ValueError("PROXY_URL must be set when PROXY_ENABLED=on")
         if self.proxy_url and urlsplit(self.proxy_url).scheme not in {"http", "https", "socks5", "socks5h"}:
             raise ValueError("PROXY_URL must use http(s) or socks5(s) scheme")
+        if self.api_auth_enabled and (len(self.api_admin_key) < 32 or len(self.api_key_pepper) < 32):
+            raise ValueError("API_ADMIN_KEY and API_KEY_PEPPER must each be at least 32 characters when API_AUTH_ENABLED=on")
 
     @property
     def active_proxy_url(self) -> str | None:

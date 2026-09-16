@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from datetime import datetime
+
 from pydantic import AnyHttpUrl, BaseModel, Field
 
 
@@ -29,3 +31,13 @@ class SearchRequest(BaseModel):
     published_after: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     published_before: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     limit: int = Field(default=20, ge=1, le=100)
+
+
+class ApiKeyCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    scopes: list[Literal["fetch", "search", "admin"]] = Field(default_factory=lambda: ["fetch"])
+    expires_at: datetime | None = None
+
+
+class ApiKeyRevokeRequest(BaseModel):
+    key_id: int = Field(gt=0)

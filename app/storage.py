@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
+import secrets
 import sqlite3
 import unicodedata
 from dataclasses import dataclass
@@ -191,6 +193,75 @@ class DocumentStore:
         except sqlite3.Error as exc:
             raise StorageError(f"database search failed: {str(exc)[:180]}") from exc
         return [dict(row) for row in rows]
+
+    def create_api_key(self, *, name: str, scopes: list[str], expires_at: str | None, pepper: str) -> tuple[str, dict[str, Any]]:
+        self._require_available()
+        token = "oma_" + secrets.token_urlsafe(32)
+        prefix = token[:16]
+        digest = hmac.new(pepper.encode("utf-8"), token.encode("utf-8"), hashlib.sha256).hexdigest()
+        now = datetime.now(UTC).isoformat()
+        try:
+            with self._connect() as connection:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO api_keys (name, key_prefix, secret_hmac, scopes_json, created_at, expires_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (name, prefix, digest, self._json(scopes), now, expires_at),
+                )
+                key_id = int(cursor.lastrowid)
+        except sqlite3.Error as exc:
+            raise StorageError(f"api key creation failed: {str(exc)[:180]}") from exc
+        return token, {"id": key_id, "name": name, "key_prefix": prefix, "scopes": scopes, "created_at": now, "expires_at": expires_at}
+
+    def authenticate_key(self, token: str, pepper: str) -> sqlite3.Row | None:
+        self._require_available()
+        prefix = token[:16]
+        try:
+            with self._connect() as connection:
+                row = connection.execute(
+                    "SELECT * FROM api_keys WHERE key_prefix = ? AND revoked_at IS NULL",
+                    (prefix,),
+                ).fetchone()
+                if not row:
+                    return None
+                if row["expires_at"] and row["expires_at"] <= datetime.now(UTC).isoformat():
+                    return None
+                expected = hmac.new(pepper.encode("utf-8"), token.encode("utf-8"), hashlib.sha256).hexdigest()
+                if not hmac.compare_digest(expected, row["secret_hmac"]):
+                    return None
+                connection.execute("UPDATE api_keys SET last_used_at = ? WHERE id = ?", (datetime.now(UTC).isoformat(), row["id"]))
+                return row
+        except sqlite3.Error as exc:
+            raise StorageError(f"api key authentication failed: {str(exc)[:180]}") from exc
+
+    def list_api_keys(self) -> list[dict[str, Any]]:
+        self._require_available()
+        try:
+            with self._connect() as connection:
+                rows = connection.execute(
+                    "SELECT id, name, key_prefix, scopes_json, created_at, expires_at, revoked_at, last_used_at FROM api_keys ORDER BY id DESC"
+                ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError(f"api key listing failed: {str(exc)[:180]}") from exc
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["scopes"] = json.loads(item.pop("scopes_json"))
+            result.append(item)
+        return result
+
+    def revoke_api_key(self, key_id: int) -> bool:
+        self._require_available()
+        try:
+            with self._connect() as connection:
+                cursor = connection.execute(
+                    "UPDATE api_keys SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL",
+                    (datetime.now(UTC).isoformat(), key_id),
+                )
+                return cursor.rowcount == 1
+        except sqlite3.Error as exc:
+            raise StorageError(f"api key revoke failed: {str(exc)[:180]}") from exc
 
     def get_route(self, hostname: str, target_kind: str) -> FetchRoute | None:
         self._require_available()
