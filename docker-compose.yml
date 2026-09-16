@@ -11,6 +11,12 @@ services:
       FETCHER_SITEMAP_MAX_URLS: "10000"
       PROXY_ENABLED: ${PROXY_ENABLED:-off}
       PROXY_URL: ${PROXY_URL:-}
+      STORAGE_DB_PATH: /data/research.db
+      STORAGE_USER_DICT_PATH: /dictionaries/custom.txt
+      STORAGE_SAVE_DEFAULT: ${STORAGE_SAVE_DEFAULT:-off}
+    volumes:
+      - ./data:/data
+      - ./dictionaries:/dictionaries:ro
     init: true
     shm_size: 1gb
     restart: unless-stopped

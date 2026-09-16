@@ -11,8 +11,8 @@ httpx → curl-cffi → Scrapling → Playwright
          Trafilatura extraction
 ```
 
-The API does not persist fetched content. It returns an envelope for every
-outcome:
+The API fetches without persistence by default and can opt into a local SQLite
+document store per request. It returns an envelope for every outcome:
 
 ```json
 {"code": 0, "message": "ok", "data": "...", "meta": {}}
@@ -153,6 +153,7 @@ curl -sS -X POST 'http://127.0.0.1:7890/api/fetch' \
 | Endpoint | Purpose |
 | --- | --- |
 | `POST /api/fetch` | Fetch one URL and extract Markdown, text, JSON, or XML. |
+| `POST /api/search` | Search persisted documents with jieba and FTS5. |
 | `GET /api/robots?url=…` | Read an origin's raw `robots.txt`. |
 | `GET /api/sitemap?url=…` | Find and expand sitemap documents into page URLs. |
 
@@ -194,6 +195,53 @@ curl -sS -X POST 'http://127.0.0.1:7890/api/fetch' \
 Available fields include title, author, description, date, sitename, categories,
 tags, image, page type, language, URL, hostname, fingerprint, ID, and license.
 The extracted Markdown/text remains in `data`.
+
+### Persist a fetched document
+
+Fetching is non-persistent by default. To store the original extracted content,
+page metadata, FTS tokens, and fetch history in SQLite, opt in per request:
+
+```sh
+curl -sS -X POST 'http://127.0.0.1:7890/api/fetch?persist=true' \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://www.samr.gov.cn/hd/zjdc/","timeout_seconds":90}' \
+  | jq '{code, storage: .meta.storage}'
+```
+
+The standards-based header alternative is `Prefer: persist`; a successful
+response includes `Preference-Applied: persist`.
+
+```sh
+curl -i -sS -X POST 'http://127.0.0.1:7890/api/fetch' \
+  -H 'Content-Type: application/json' \
+  -H 'Prefer: persist' \
+  -d '{"url":"https://example.com/"}'
+```
+
+Priority is `persist` query parameter, then `Prefer: persist`, then
+`STORAGE_SAVE_DEFAULT=off|on` in `.env`. Content is de-duplicated by SHA-256;
+repeated content reuses its document while recording another fetch history row.
+
+### Search stored documents
+
+Search uses jieba tokenization and SQLite FTS5 with title, description, tags,
+and content weights of 5, 2, 3, and 1 respectively.
+
+```sh
+curl -sS -X POST 'http://127.0.0.1:7890/api/search' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "query":"国家标准 外文版",
+    "hostname":"samr.gov.cn",
+    "published_after":"2026-01-01",
+    "published_before":"2026-12-31",
+    "limit":20
+  }' | jq
+```
+
+Search `data` is a JSON array of title, URL, hostname, publication date, BM25
+score, and FTS snippet. Original document text is retained in SQLite; only the
+separate search projection is jieba-tokenized.
 
 ### Read robots.txt
 
@@ -266,3 +314,19 @@ failback-diagnosis prompts for future skill evaluation.
 Private, loopback, link-local, multicast, and other non-routable targets are
 rejected by default. `/api/fetch` enforces robots rules by default. Configure
 the documented variables in `.env.example` only for a trusted deployment.
+
+## Document store configuration
+
+The direct-development database defaults to `data/research.db`; `data/` is
+ignored by Git. Docker Compose bind-mounts `./data:/data`, so normal container
+stop, restart, and Compose teardown do not remove the database.
+
+SQLite uses WAL mode, `synchronous=NORMAL`, foreign keys, and a 5-second busy
+timeout. Use `dictionaries/custom.txt` to add jieba user words; it is mounted
+read-only at `/dictionaries/custom.txt` in Docker and is loaded at startup when
+non-empty.
+
+```dotenv
+# .env
+STORAGE_SAVE_DEFAULT=off
+```

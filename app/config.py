@@ -19,6 +19,9 @@ class Settings:
     discovery_retries: int = int(os.getenv("FETCHER_DISCOVERY_RETRIES", "2"))
     discovery_retry_delay: float = float(os.getenv("FETCHER_DISCOVERY_RETRY_DELAY", "0.4"))
     user_agent: str = os.getenv("FETCHER_USER_AGENT", "oma-fetcher/0.1")
+    storage_path: str = field(default_factory=lambda: os.getenv("STORAGE_DB_PATH", "data/research.db"))
+    storage_save_default: bool = field(default_factory=lambda: _as_bool("STORAGE_SAVE_DEFAULT", False))
+    storage_user_dict_path: str = field(default_factory=lambda: os.getenv("STORAGE_USER_DICT_PATH", "dictionaries/custom.txt"))
     proxy_enabled: bool = field(default_factory=lambda: _as_bool("PROXY_ENABLED", False))
     proxy_url: str = field(default_factory=lambda: os.getenv("PROXY_URL", "").strip())
 

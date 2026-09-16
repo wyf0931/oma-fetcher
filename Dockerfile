@@ -24,6 +24,7 @@ RUN uv sync --frozen --no-dev \
     && rm -rf /var/lib/apt/lists/* /root/.cache
 
 COPY app ./app
+COPY db ./db
 
 RUN useradd --create-home --uid 10001 appuser \
     && mkdir -p /tmp/fetcher \

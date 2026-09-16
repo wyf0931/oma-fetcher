@@ -19,6 +19,13 @@ class FetchRequest(BaseModel):
 class ApiEnvelope(BaseModel):
     code: int
     message: str
-    data: str | None = None
+    data: Any | None = None
     meta: dict[str, Any] = Field(default_factory=dict)
 
+
+class SearchRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=500)
+    hostname: str | None = Field(default=None, max_length=255)
+    published_after: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    published_before: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    limit: int = Field(default=20, ge=1, le=100)
