@@ -40,6 +40,22 @@ CREATE TABLE IF NOT EXISTS fetches (
 CREATE INDEX IF NOT EXISTS idx_fetches_document ON fetches(document_id);
 CREATE INDEX IF NOT EXISTS idx_fetches_fetched_at ON fetches(fetched_at);
 
+CREATE TABLE IF NOT EXISTS fetch_routes (
+    hostname            TEXT NOT NULL,
+    target_kind         TEXT NOT NULL,
+    strategy            TEXT NOT NULL,
+    extraction_method   TEXT NOT NULL,
+    success_count       INTEGER NOT NULL DEFAULT 1,
+    failure_count       INTEGER NOT NULL DEFAULT 0,
+    last_success_at     TEXT NOT NULL,
+    last_failure_at     TEXT,
+    expires_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    PRIMARY KEY (hostname, target_kind)
+);
+
+CREATE INDEX IF NOT EXISTS idx_fetch_routes_expires_at ON fetch_routes(expires_at);
+
 CREATE TABLE IF NOT EXISTS document_search (
     document_id          INTEGER PRIMARY KEY,
     title_tokens         TEXT NOT NULL,

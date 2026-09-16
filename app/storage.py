@@ -6,6 +6,7 @@ import sqlite3
 import unicodedata
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -17,10 +18,20 @@ class StorageError(RuntimeError):
     pass
 
 
+def normalize_route_hostname(hostname: str) -> str:
+    return hostname.strip().lower().removeprefix("www.")
+
+
 @dataclass(frozen=True)
 class StorageResult:
     document_id: int
     deduplicated: bool
+
+
+@dataclass(frozen=True)
+class FetchRoute:
+    strategy: str
+    extraction_method: str
 
 
 class DocumentStore:
@@ -180,6 +191,80 @@ class DocumentStore:
         except sqlite3.Error as exc:
             raise StorageError(f"database search failed: {str(exc)[:180]}") from exc
         return [dict(row) for row in rows]
+
+    def get_route(self, hostname: str, target_kind: str) -> FetchRoute | None:
+        self._require_available()
+        hostname = normalize_route_hostname(hostname)
+        now = datetime.now(UTC).isoformat()
+        try:
+            with self._connect() as connection:
+                row = connection.execute(
+                    """
+                    SELECT strategy, extraction_method FROM fetch_routes
+                    WHERE hostname = ? AND target_kind = ? AND expires_at > ?
+                    """,
+                    (hostname, target_kind, now),
+                ).fetchone()
+        except sqlite3.Error as exc:
+            raise StorageError(f"route lookup failed: {str(exc)[:180]}") from exc
+        return FetchRoute(strategy=row["strategy"], extraction_method=row["extraction_method"]) if row else None
+
+    def record_route_success(
+        self,
+        *,
+        hostname: str,
+        target_kind: str,
+        strategy: str,
+        extraction_method: str,
+        ttl_hours: int,
+    ) -> None:
+        self._require_available()
+        hostname = normalize_route_hostname(hostname)
+        now = datetime.now(UTC)
+        expires_at = (now + timedelta(hours=ttl_hours)).isoformat()
+        timestamp = now.isoformat()
+        try:
+            with self._connect() as connection:
+                connection.execute(
+                    """
+                    INSERT INTO fetch_routes (
+                        hostname, target_kind, strategy, extraction_method, success_count,
+                        failure_count, last_success_at, expires_at, updated_at
+                    ) VALUES (?, ?, ?, ?, 1, 0, ?, ?, ?)
+                    ON CONFLICT(hostname, target_kind) DO UPDATE SET
+                        strategy = excluded.strategy,
+                        extraction_method = excluded.extraction_method,
+                        success_count = CASE
+                            WHEN fetch_routes.strategy = excluded.strategy THEN fetch_routes.success_count + 1
+                            ELSE 1
+                        END,
+                        failure_count = 0,
+                        last_success_at = excluded.last_success_at,
+                        expires_at = excluded.expires_at,
+                        updated_at = excluded.updated_at
+                    """,
+                    (hostname, target_kind, strategy, extraction_method, timestamp, expires_at, timestamp),
+                )
+        except sqlite3.Error as exc:
+            raise StorageError(f"route update failed: {str(exc)[:180]}") from exc
+
+    def record_route_failure(self, *, hostname: str, target_kind: str, strategy: str) -> None:
+        """Expire only the route that failed; the full strategy chain remains available."""
+        self._require_available()
+        hostname = normalize_route_hostname(hostname)
+        timestamp = datetime.now(UTC).isoformat()
+        try:
+            with self._connect() as connection:
+                connection.execute(
+                    """
+                    UPDATE fetch_routes
+                    SET failure_count = failure_count + 1, last_failure_at = ?, expires_at = ?, updated_at = ?
+                    WHERE hostname = ? AND target_kind = ? AND strategy = ?
+                    """,
+                    (timestamp, timestamp, timestamp, hostname, target_kind, strategy),
+                )
+        except sqlite3.Error as exc:
+            raise StorageError(f"route invalidation failed: {str(exc)[:180]}") from exc
 
     def tokenize(self, text: str) -> str:
         return " ".join(token.strip() for token in jieba.cut(text) if token.strip())

@@ -4,6 +4,7 @@ import asyncio
 import urllib.robotparser
 from contextlib import asynccontextmanager
 from typing import Any
+from urllib.parse import urlsplit
 
 import trafilatura
 import httpx
@@ -16,6 +17,7 @@ from .discovery import DiscoveryError, DiscoveryFetchError, origin_for, robots, 
 from .fetchers import EscalatingFetcher, FetchError
 from .metadata import extract_page_metadata
 from .models import ApiEnvelope, FetchRequest, SearchRequest
+from .quality import ContentAssessment, assess_page_content
 from .safety import UnsafeUrlError
 from .storage import DocumentStore, StorageError
 
@@ -60,7 +62,7 @@ async def fetch_page(payload: FetchRequest, persist: bool | None = Query(default
     url = str(payload.url)
     try:
         if settings.enforce_robots:
-            robots_text, _ = await robots(url, settings)
+            robots_text, _ = await robots(url, settings, store)
             if robots_text:
                 parser = urllib.robotparser.RobotFileParser()
                 parser.parse(robots_text.splitlines())
@@ -68,21 +70,42 @@ async def fetch_page(payload: FetchRequest, persist: bool | None = Query(default
                     return envelope(2001, "blocked by robots.txt", meta={"url": url}, status_code=403)
         extracted: str | None = None
         page_metadata: dict | None = None
+        assessment: ContentAssessment | None = None
+        route = None
+        hostname = urlsplit(url).hostname or ""
+        if store.available and hostname:
+            try:
+                route = store.get_route(hostname, "page")
+            except StorageError:
+                route = None
 
         async def has_extractable_content(result):
-            nonlocal extracted, page_metadata
-            extracted = await asyncio.to_thread(
+            nonlocal extracted, page_metadata, assessment
+            trafilatura_content = await asyncio.to_thread(
                 trafilatura.extract,
                 result.html,
                 url=result.final_url,
                 output_format=payload.output_format,
                 with_metadata=payload.output_format in {"json", "xml"},
             )
-            if extracted:
+            assessment = await asyncio.to_thread(
+                assess_page_content,
+                html=result.html,
+                url=result.final_url,
+                trafilatura_content=trafilatura_content or "",
+            )
+            if assessment.usable:
+                extracted = assessment.content
                 page_metadata = await asyncio.to_thread(extract_page_metadata, result.html, result.final_url)
-            return bool(extracted)
+            return assessment.usable
 
-        result, attempts = await fetcher.fetch(url, payload.timeout_seconds, payload.strategy, accept=has_extractable_content)
+        result, attempts = await fetcher.fetch(
+            url,
+            payload.timeout_seconds,
+            payload.strategy,
+            accept=has_extractable_content,
+            preferred_strategy=route.strategy if route else None,
+        )
         if not extracted:  # Defensive: `accept` guarantees this branch is unreachable.
             return envelope(2002, "page fetched but no main content could be extracted", meta={"attempts": attempts}, status_code=422)
         metadata = {
@@ -93,7 +116,29 @@ async def fetch_page(payload: FetchRequest, persist: bool | None = Query(default
             "attempts": attempts,
             "proxy_enabled": settings.proxy_enabled,
             "page": page_metadata or {},
+            "content_kind": assessment.kind if assessment else None,
+            "extraction_method": assessment.extraction_method if assessment else None,
+            "failback": {
+                "route_hit": bool(route),
+                "preferred_strategy": route.strategy if route else None,
+                "accepted_strategy": result.strategy,
+                "signals": assessment.signals if assessment else [],
+            },
         }
+        route_hostname = (page_metadata or {}).get("hostname") or urlsplit(result.final_url).hostname
+        if store.available and route_hostname:
+            try:
+                if route and route.strategy != result.strategy:
+                    store.record_route_failure(hostname=route_hostname, target_kind="page", strategy=route.strategy)
+                store.record_route_success(
+                    hostname=route_hostname,
+                    target_kind="page",
+                    strategy=result.strategy,
+                    extraction_method=assessment.extraction_method if assessment and assessment.extraction_method else "trafilatura",
+                    ttl_hours=settings.fetch_route_ttl_hours,
+                )
+            except StorageError:
+                pass
         should_persist, persistence_source = persistence_preference(persist, prefer)
         storage_metadata: dict[str, Any] = {"requested": should_persist, "saved": False, "source": persistence_source}
         response_headers: dict[str, str] | None = None
@@ -145,7 +190,7 @@ async def search_documents(payload: SearchRequest):
 @app.get("/api/robots", response_model=ApiEnvelope)
 async def get_robots(url: str):
     try:
-        body, meta = await robots(url, settings)
+        body, meta = await robots(url, settings, store)
         return envelope(0, "ok", body, meta)
     except UnsafeUrlError as exc:
         return envelope(1002, str(exc), status_code=400)
@@ -156,7 +201,7 @@ async def get_robots(url: str):
 @app.get("/api/sitemap", response_model=ApiEnvelope)
 async def get_sitemap(url: str):
     try:
-        body, meta = await sitemap(url, settings)
+        body, meta = await sitemap(url, settings, store)
         return envelope(0, "ok", body, meta)
     except UnsafeUrlError as exc:
         return envelope(1002, str(exc), status_code=400)
