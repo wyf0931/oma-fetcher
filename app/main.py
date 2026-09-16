@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from .config import settings
 from .discovery import DiscoveryError, DiscoveryFetchError, origin_for, robots, sitemap
 from .fetchers import EscalatingFetcher, FetchError
+from .metadata import extract_page_metadata
 from .models import ApiEnvelope, FetchRequest
 from .safety import UnsafeUrlError
 
@@ -52,9 +53,10 @@ async def fetch_page(payload: FetchRequest):
                 if not parser.can_fetch(settings.user_agent, url):
                     return envelope(2001, "blocked by robots.txt", meta={"url": url}, status_code=403)
         extracted: str | None = None
+        page_metadata: dict | None = None
 
         async def has_extractable_content(result):
-            nonlocal extracted
+            nonlocal extracted, page_metadata
             extracted = await asyncio.to_thread(
                 trafilatura.extract,
                 result.html,
@@ -62,12 +64,14 @@ async def fetch_page(payload: FetchRequest):
                 output_format=payload.output_format,
                 with_metadata=payload.output_format in {"json", "xml"},
             )
+            if extracted:
+                page_metadata = await asyncio.to_thread(extract_page_metadata, result.html, result.final_url)
             return bool(extracted)
 
         result, attempts = await fetcher.fetch(url, payload.timeout_seconds, payload.strategy, accept=has_extractable_content)
         if not extracted:  # Defensive: `accept` guarantees this branch is unreachable.
             return envelope(2002, "page fetched but no main content could be extracted", meta={"attempts": attempts}, status_code=422)
-        return envelope(0, "ok", extracted, {"final_url": result.final_url, "strategy": result.strategy, "status_code": result.status_code, "content_type": result.content_type, "attempts": attempts})
+        return envelope(0, "ok", extracted, {"final_url": result.final_url, "strategy": result.strategy, "status_code": result.status_code, "content_type": result.content_type, "attempts": attempts, "page_metadata": page_metadata or {}})
     except UnsafeUrlError as exc:
         return envelope(1002, str(exc), status_code=400)
     except (FetchError, DiscoveryError, httpx.HTTPError) as exc:

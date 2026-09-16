@@ -78,6 +78,18 @@ Set `output_format` to `txt`, `json`, or `xml` when the caller needs a
 Trafilatura format other than Markdown. Do not use `strategy` unless diagnosing
 a particular layer; `auto` is the normal choice.
 
+Every successful fetch also returns `meta.page_metadata`. It combines `html`
+(raw SEO/OG/Twitter/canonical/hreflang/JSON-LD metadata) and `trafilatura`
+(semantic title, author, date, sitename, categories, tags, image, language,
+and page type). Keep content in `data` and inspect metadata separately:
+
+```sh
+curl -sS -X POST "$OMA_FETCHER_BASE_URL/api/fetch" \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://example.com/article","timeout_seconds":90}' \
+  | jq '.meta.page_metadata'
+```
+
 ## Read robots.txt
 
 ```sh
