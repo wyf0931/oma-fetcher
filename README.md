@@ -25,6 +25,39 @@ outcome:
 
 This project uses [uv](https://docs.astral.sh/uv/) for Python dependencies.
 
+### macOS one-command install (Colima)
+
+For a fresh macOS machine, this downloads the versioned installer from this
+repository. It installs Homebrew, Git, Docker CLI/Compose, and Colima only when
+they are missing; starts Colima with a conservative 1 CPU / 2 GiB minimum; and
+pulls the published GHCR image. It **does not build Docker images locally**.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/wyf0931/oma-fetcher/main/scripts/install-macos.sh | bash
+```
+
+The service is then available at `http://127.0.0.1:8000`, with API docs at
+`/docs`. To inspect the script before running it:
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/wyf0931/oma-fetcher/main/scripts/install-macos.sh
+less install-macos.sh
+bash install-macos.sh
+```
+
+The script clones to `~/oma-fetcher` by default. Override its safe defaults:
+
+```sh
+FETCHER_DIR="$HOME/Developer/oma-fetcher" FETCHER_PORT=8003 \
+  COLIMA_CPUS=2 COLIMA_MEMORY_GB=4 \
+  bash scripts/install-macos.sh
+```
+
+It preserves a running Colima instance and refuses to overwrite a directory
+that is not this repository or a port already in use.
+
+### Local Python development
+
 ```sh
 uv sync
 uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
@@ -42,11 +75,13 @@ port in the commands below. Interactive OpenAPI documentation is available at
 
 ## Docker deployment
 
-Docker builds the browser-enabled runtime, including Chromium, Playwright, and
-Scrapling dependencies:
+The published image contains Chromium, Playwright, and Scrapling dependencies.
+Deployments pull it from GitHub Container Registry rather than building it on
+your machine:
 
 ```sh
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 docker compose ps
 curl -sS http://127.0.0.1:8000/healthz | jq
 ```
@@ -61,18 +96,19 @@ Stop the deployment with `docker compose down`.
 
 ### Colima and proxy configuration
 
-When Docker needs a proxy, it must be reachable from the Colima VM/container.
+When the running service needs a proxy, it must be reachable from the Colima VM/container.
 macOS `127.0.0.1:7897` is not automatically reachable inside a container.
 Provide a reachable proxy endpoint explicitly:
 
 ```sh
-export FETCHER_BUILD_PROXY=http://REACHABLE_PROXY_HOST:7897
 export FETCHER_RUNTIME_PROXY=http://REACHABLE_PROXY_HOST:7897
-docker compose up -d --build
+docker compose pull && docker compose up -d
 ```
 
 Host-side `http_proxy=http://127.0.0.1:7897` can still help local tools, but
-Compose intentionally does not forward it into the container.
+Compose intentionally does not forward it into the container. The one-command
+installer uses the public `ghcr.io/wyf0931/oma-fetcher:latest` image; set
+`FETCHER_IMAGE` to pin a SHA-tagged release image when needed.
 
 ## API
 

@@ -1,13 +1,9 @@
 services:
   fetcher:
-    build:
-      context: .
-      args:
-        HTTP_PROXY: ${FETCHER_BUILD_PROXY:-}
-        HTTPS_PROXY: ${FETCHER_BUILD_PROXY:-}
-        ALL_PROXY: ${FETCHER_BUILD_PROXY:-}
+    image: ${FETCHER_IMAGE:-ghcr.io/wyf0931/oma-fetcher:latest}
+    pull_policy: always
     ports:
-      - "8000:8000"
+      - "${FETCHER_PORT:-8000}:8000"
     environment:
       FETCHER_ENFORCE_ROBOTS: "true"
       FETCHER_ALLOW_PRIVATE_NETWORKS: "false"

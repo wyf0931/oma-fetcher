@@ -39,6 +39,20 @@ Check health before making a request:
 curl -sS --fail-with-body "$OMA_FETCHER_BASE_URL/healthz" | jq
 ```
 
+## Deploy on a new macOS machine
+
+The repository ships a one-command installer for users who have not installed
+Homebrew, Docker CLI, or Colima. It pulls the published GHCR image and never
+performs a local Docker build:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/wyf0931/oma-fetcher/main/scripts/install-macos.sh | bash
+```
+
+The script defaults to `~/oma-fetcher` and port 8000. Explain that macOS
+`127.0.0.1` proxies are not automatically reachable from Colima containers;
+use `FETCHER_RUNTIME_PROXY` only with an address reachable from that VM.
+
 ## Fetch and extract one page
 
 Markdown is the default output. Always inspect the response envelope before
@@ -114,4 +128,3 @@ Scrapling stealth browser and Playwright. Every completed attempt appears in
   bounded retries; repeated manual calls can increase WAF rate limiting.
 - The service rejects private, loopback, and non-routable URLs by default.
   Do not recommend disabling this outside a trusted network.
-
