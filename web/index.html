@@ -35,11 +35,11 @@
 
       <main class="mx-auto max-w-7xl px-5 py-8 lg:px-10">
         <section x-show="view === 'dataset'" x-cloak>
-          <div class="mb-6"><h1 class="text-3xl font-semibold tracking-tight">Saved research</h1><p class="mt-1 text-sm text-base-content/60">Browse documents collected by the fetch pipeline.</p></div>
+          <div class="mb-6"><h1 class="text-3xl font-semibold tracking-tight">Dataset</h1><p class="mt-1 text-sm text-base-content/60">Browse documents collected by the fetch pipeline.</p></div>
           <form @submit.prevent="loadDocuments(1)" class="mb-5 grid grid-cols-1 gap-3 rounded-box border border-base-300 bg-base-100 p-4 shadow-sm md:grid-cols-3">
-            <label class="input input-bordered input-sm flex items-center gap-2"><i data-lucide="search" class="size-4 text-base-content/50"></i><input aria-label="Title or content" x-model="filters.content" placeholder="Title or content…" /></label>
-            <label class="input input-bordered input-sm flex items-center gap-2"><i data-lucide="globe-2" class="size-4 text-base-content/50"></i><input aria-label="Site name" x-model="filters.sitename" placeholder="Site name…" /></label>
-            <label class="input input-bordered input-sm flex items-center gap-2"><i data-lucide="tags" class="size-4 text-base-content/50"></i><input aria-label="Tags" x-model="filters.tags" placeholder="Tags…" /></label>
+            <label class="input input-bordered input-sm flex items-center gap-2"><i data-lucide="search" class="size-4 text-base-content/70"></i><input aria-label="Title or content" x-model="filters.content" placeholder="Title or content…" /></label>
+            <label class="input input-bordered input-sm flex items-center gap-2"><i data-lucide="globe-2" class="size-4 text-base-content/70"></i><input aria-label="Site name" x-model="filters.sitename" placeholder="Site name…" /></label>
+            <label class="input input-bordered input-sm flex items-center gap-2"><i data-lucide="tags" class="size-4 text-base-content/70"></i><input aria-label="Tags" x-model="filters.tags" placeholder="Tags…" /></label>
           </form>
 
           <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100 shadow-sm">
