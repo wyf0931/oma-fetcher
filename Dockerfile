@@ -25,6 +25,7 @@ RUN uv sync --frozen --no-dev \
 
 COPY app ./app
 COPY db ./db
+COPY web ./web
 
 RUN useradd --create-home --uid 10001 appuser \
     && mkdir -p /tmp/fetcher \

@@ -1,6 +1,6 @@
 window.apiClient = (() => {
   const storageKey = 'oma_fetcher_api_key';
-  const baseUrl = (window.OMA_FETCHER_API_BASE || 'http://127.0.0.1:7890').replace(/\/$/, '');
+  const baseUrl = (window.OMA_FETCHER_API_BASE || window.location.origin || 'http://127.0.0.1:7890').replace(/\/$/, '');
   class ApiError extends Error { constructor(message, status, envelope) { super(message); this.status = status; this.envelope = envelope; } }
   async function request(path, options = {}) {
     const headers = new Headers(options.headers || {});

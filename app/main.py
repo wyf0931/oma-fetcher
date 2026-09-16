@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import urllib.robotparser
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -12,6 +13,7 @@ from fastapi import Depends, FastAPI, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from .auth import Principal, authenticate
 from .config import settings
@@ -378,3 +380,8 @@ async def get_sitemap(request: Request, url: str):
         return envelope(1002, str(exc), status_code=400)
     except DiscoveryError as exc:
         return envelope(3002, str(exc), status_code=404)
+
+
+WEB_ROOT = Path(__file__).resolve().parent.parent / "web"
+if WEB_ROOT.is_dir():
+    app.mount("/", StaticFiles(directory=WEB_ROOT, html=True), name="web")

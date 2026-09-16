@@ -33,8 +33,9 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 8003
 export OMA_FETCHER_BASE_URL="http://127.0.0.1:8003"
 ```
 
-For a managed background local instance, use `bin/ops.sh`. Its default is 7890
-and it supports `start`, `stop`, `restart`, and `status` plus `-p PORT`:
+For a managed background local instance, use `bin/ops.sh`. It starts/stops both
+the API and static Web UI (default 7890), and supports `start`,
+`stop`, `restart`, and `status` plus `-p PORT` for the API:
 
 ```sh
 bin/ops.sh start -p 8003
