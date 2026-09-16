@@ -101,6 +101,32 @@ curl -sS -X POST "$OMA_FETCHER_BASE_URL/api/fetch" \
   | jq '.meta.page'
 ```
 
+## Persist and search documents
+
+Fetches are not stored by default. Add `?persist=true` to persist a document,
+its jieba search projection, and fetch history. The response reports
+`meta.storage.document_id` and `meta.storage.deduplicated`.
+
+```sh
+curl -sS -X POST "$OMA_FETCHER_BASE_URL/api/fetch?persist=true" \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://example.com/article"}' \
+  | jq '{code, storage: .meta.storage}'
+```
+
+`Prefer: persist` is the HTTP-header alternative. Query `persist=true|false`
+overrides that header, which overrides `.env` `STORAGE_SAVE_DEFAULT`.
+
+Search persisted documents with title/tag/content FTS matching and optional
+hostname/date filters:
+
+```sh
+curl -sS -X POST "$OMA_FETCHER_BASE_URL/api/search" \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"国家标准 外文版","hostname":"samr.gov.cn","limit":20}' \
+  | jq '.data'
+```
+
 ## Read robots.txt
 
 ```sh
