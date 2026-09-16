@@ -1,0 +1,23 @@
+{
+  "skill_name": "oma-fetcher",
+  "evals": [
+    {
+      "id": "iso-robots-observability",
+      "prompt": "Use the local OMA Fetcher to retrieve ISO's robots.txt and explain which fallback strategy succeeded.",
+      "expected_output": "A curl + jq command that checks code, prints robots content only on success, and reports meta.attempts.",
+      "files": []
+    },
+    {
+      "id": "direct-sitemap-listing",
+      "prompt": "List the first 20 page URLs from https://www.iso.org/sitemap/standard.xml through the service.",
+      "expected_output": "A sitemap request whose jq expression decodes the JSON string in data with fromjson before slicing.",
+      "files": []
+    },
+    {
+      "id": "failed-fetch-diagnosis",
+      "prompt": "The fetch API printed null while reading a protected page. Diagnose it without treating null as content.",
+      "expected_output": "An envelope-inspection command and explanation that uses code, message, and meta.attempts.",
+      "files": []
+    }
+  ]
+}
