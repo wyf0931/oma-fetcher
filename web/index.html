@@ -12,18 +12,25 @@
   </head>
   <body class="min-h-screen bg-base-200 text-base-content">
     <div x-data="app()" x-init="init()" class="min-h-screen">
-      <header class="navbar border-b border-base-300 bg-base-100 px-5 lg:px-10">
-        <div class="flex-1 gap-3">
-          <div class="rounded-box bg-primary px-2 py-1 font-mono text-sm font-bold text-primary-content">OMA</div>
-          <span class="text-lg font-semibold tracking-tight">Reader library</span>
+      <header class="navbar min-h-16 border-b border-base-300 bg-base-100 px-4 shadow-sm lg:px-8">
+        <div class="navbar-start min-w-0 flex-1 gap-3">
+          <div class="inline-flex shrink-0 rounded-box bg-primary px-2 py-1 font-mono text-sm font-bold text-primary-content">OMA</div>
+          <span class="truncate text-lg font-semibold tracking-tight">Reader library</span>
         </div>
-        <nav class="flex gap-1" aria-label="Primary">
+        <nav class="navbar-center hidden gap-1 sm:flex" aria-label="Primary">
           <button class="btn btn-sm" :class="view === 'dataset' ? 'btn-neutral' : 'btn-ghost'" @click="navigate('dataset')"><i data-lucide="library" class="size-4"></i>Dataset</button>
           <button class="btn btn-sm" :class="view === 'keys' ? 'btn-neutral' : 'btn-ghost'" @click="navigate('keys')"><i data-lucide="key-round" class="size-4"></i>Keys</button>
         </nav>
-        <div class="ml-3 flex items-center gap-2">
+        <div class="dropdown dropdown-end sm:hidden">
+          <button class="btn btn-circle btn-ghost btn-sm" aria-label="Open navigation menu"><i data-lucide="menu" class="size-4"></i></button>
+          <ul tabindex="0" class="dropdown-content menu z-10 mt-3 w-40 rounded-box border border-base-300 bg-base-100 p-2 shadow-lg">
+            <li><button @click="navigate('dataset')"><i data-lucide="library" class="size-4"></i>Dataset</button></li>
+            <li><button @click="navigate('keys')"><i data-lucide="key-round" class="size-4"></i>Keys</button></li>
+          </ul>
+        </div>
+        <div class="navbar-end ml-3 flex w-auto items-center gap-2">
           <span class="badge badge-ghost text-xs" x-text="apiClient.hasKey() ? 'key set' : 'local mode'"></span>
-          <button class="btn btn-circle btn-ghost btn-sm" title="Clear API key" @click="clearKey()"><i data-lucide="log-out" class="size-4"></i></button>
+          <button class="btn btn-circle btn-ghost btn-sm" title="Clear API key" aria-label="Clear API key" @click="clearKey()"><i data-lucide="log-out" class="size-4"></i></button>
         </div>
       </header>
 
@@ -35,18 +42,18 @@
             <div><h1 class="text-3xl font-semibold tracking-tight">Saved research</h1><p class="mt-1 text-sm text-base-content/60">Browse documents collected by the fetch pipeline.</p></div>
             <div class="stats stats-horizontal border border-base-300 bg-base-100 shadow-sm"><div class="stat px-5 py-3"><div class="stat-title text-xs">Documents</div><div class="stat-value text-2xl" x-text="pagination.total"></div></div></div>
           </div>
-          <form @submit.prevent="loadDocuments(1)" class="mb-5 grid gap-3 rounded-box border border-base-300 bg-base-100 p-4 shadow-sm md:grid-cols-4">
-            <label class="form-control md:col-span-2"><div class="label py-1"><span class="label-text text-xs">Title or content</span></div><input class="input input-bordered input-sm" x-model="filters.content" placeholder="Search saved text…" /></label>
-            <label class="form-control"><div class="label py-1"><span class="label-text text-xs">Site name</span></div><input class="input input-bordered input-sm" x-model="filters.sitename" placeholder="e.g. ISO" /></label>
-            <label class="form-control"><div class="label py-1"><span class="label-text text-xs">Tags</span></div><input class="input input-bordered input-sm" x-model="filters.tags" placeholder="e.g. standard" /></label>
-            <div class="flex items-end md:col-span-4"><button class="btn btn-sm btn-neutral" type="submit"><i data-lucide="search" class="size-4"></i>Search</button><button class="btn btn-sm btn-ghost" type="button" @click="resetFilters()">Clear</button></div>
+          <form @submit.prevent="loadDocuments(1)" class="mb-5 grid gap-4 rounded-box border border-base-300 bg-base-100 p-4 shadow-sm md:grid-cols-12">
+            <label class="form-control md:col-span-6"><div class="label py-0"><span class="label-text text-xs font-medium">Title or content</span></div><input class="input input-bordered input-sm" x-model="filters.content" placeholder="Search saved text…" /></label>
+            <label class="form-control md:col-span-3"><div class="label py-0"><span class="label-text text-xs font-medium">Site name</span></div><input class="input input-bordered input-sm" x-model="filters.sitename" placeholder="e.g. ISO" /></label>
+            <label class="form-control md:col-span-3"><div class="label py-0"><span class="label-text text-xs font-medium">Tags</span></div><input class="input input-bordered input-sm" x-model="filters.tags" placeholder="e.g. standard" /></label>
+            <div class="flex items-center gap-2 md:col-span-12"><button class="btn btn-sm btn-neutral" type="submit"><i data-lucide="search" class="size-4"></i>Search</button><button class="btn btn-sm btn-ghost" type="button" @click="resetFilters()">Clear</button></div>
           </form>
 
           <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100 shadow-sm">
             <table class="table table-zebra"><thead><tr><th>Title</th><th>Site</th><th>Published</th><th>Fetched</th><th class="text-right">Actions</th></tr></thead>
               <tbody><template x-if="loading"><tr><td colspan="5" class="py-12 text-center"><span class="loading loading-spinner loading-md"></span></td></tr></template>
                 <template x-if="!loading && documents.length === 0"><tr><td colspan="5" class="py-12 text-center text-base-content/50">No saved documents found.</td></tr></template>
-                <template x-for="doc in documents" :key="doc.id"><tr class="hover"><td><button class="max-w-[22rem] truncate text-left font-medium hover:underline" @click="openDocument(doc.id)" x-text="truncate(doc.title || '(untitled)')"></button><div class="max-w-[22rem] truncate text-xs text-base-content/50" x-text="doc.url"></div></td><td x-text="doc.site_name || doc.hostname"></td><td class="whitespace-nowrap text-sm" x-text="formatDate(doc.published_at)"></td><td class="whitespace-nowrap text-sm" x-text="formatDate(doc.fetched_at)"></td><td class="text-right"><div class="join"><button class="btn btn-ghost btn-xs join-item" title="Open" @click="openDocument(doc.id)"><i data-lucide="arrow-up-right" class="size-4"></i></button><button class="btn btn-ghost btn-xs join-item text-error" title="Delete" @click="deleteDocument(doc.id)"><i data-lucide="trash-2" class="size-4"></i></button></div></td></tr></template>
+                <template x-for="doc in documents" :key="doc.id"><tr class="hover"><td><button class="max-w-[22rem] truncate text-left font-medium hover:underline" @click="openDocument(doc.id)" x-text="truncate(doc.title || '(untitled)')"></button><div class="max-w-[22rem] truncate text-xs text-base-content/50" x-text="doc.url"></div></td><td x-text="doc.site_name || doc.hostname"></td><td class="whitespace-nowrap text-sm" x-text="formatDate(doc.published_at)"></td><td class="whitespace-nowrap text-sm" x-text="formatDate(doc.fetched_at)"></td><td class="text-right"><div class="join"><button class="btn btn-ghost btn-sm join-item" title="Open document" aria-label="Open document" @click="openDocument(doc.id)"><i data-lucide="arrow-up-right" class="size-4"></i></button><button class="btn btn-ghost btn-sm join-item text-error" title="Delete document" aria-label="Delete document" @click="deleteDocument(doc.id)"><i data-lucide="trash-2" class="size-4"></i></button></div></td></tr></template>
               </tbody>
             </table>
             <div class="flex flex-wrap items-center justify-between gap-3 border-t border-base-300 px-4 py-3"><span class="text-xs text-base-content/60" x-text="paginationLabel()"></span><div class="join"><button class="btn btn-sm join-item" :disabled="pagination.page <= 1" @click="loadDocuments(pagination.page - 1)">«</button><button class="btn btn-sm join-item pointer-events-none" x-text="pagination.page"></button><button class="btn btn-sm join-item" :disabled="pagination.page >= pagination.pages" @click="loadDocuments(pagination.page + 1)">»</button></div></div>
