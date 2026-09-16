@@ -36,7 +36,7 @@ pulls the published GHCR image. It **does not build Docker images locally**.
 curl -fsSL https://raw.githubusercontent.com/wyf0931/oma-fetcher/main/scripts/install-macos.sh | bash
 ```
 
-The service is then available at `http://127.0.0.1:8000`, with API docs at
+The service is then available at `http://127.0.0.1:7890`, with API docs at
 `/docs`. To inspect the script before running it:
 
 ```sh
@@ -60,16 +60,30 @@ that is not this repository or a port already in use.
 
 ```sh
 uv sync
-uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+uv run uvicorn app.main:app --host 127.0.0.1 --port 7890
+```
+
+For developer-local work, manage a background **non-Docker** instance with the
+project helper. It runs `uvicorn` through `uv`, and stores its PID and logs in
+the system temporary directory rather than the repository:
+
+```sh
+bin/ops.sh start                 # http://127.0.0.1:7890
+bin/ops.sh status
+bin/ops.sh stop
+
+bin/ops.sh start -p 8003         # choose a different local port
+bin/ops.sh status -p 8003
+bin/ops.sh stop -p 8003
 ```
 
 In another terminal:
 
 ```sh
-curl -sS http://127.0.0.1:8000/healthz | jq
+curl -sS http://127.0.0.1:7890/healthz | jq
 ```
 
-If port 8000 is already in use, choose another port such as 8003 and use that
+If port 7890 is already in use, choose another port such as 8003 and use that
 port in the commands below. Interactive OpenAPI documentation is available at
 `/docs`.
 
@@ -83,7 +97,7 @@ your machine:
 docker compose pull
 docker compose up -d
 docker compose ps
-curl -sS http://127.0.0.1:8000/healthz | jq
+curl -sS http://127.0.0.1:7890/healthz | jq
 ```
 
 Follow logs with:
@@ -124,7 +138,7 @@ Markdown is the default. Supported `output_format` values are `markdown`,
 `txt`, `json`, and `xml`.
 
 ```sh
-curl -sS --fail-with-body -X POST 'http://127.0.0.1:8000/api/fetch' \
+curl -sS --fail-with-body -X POST 'http://127.0.0.1:7890/api/fetch' \
   -H 'Content-Type: application/json' \
   -d '{
     "url": "https://www.iso.org/standard/87210.html",
@@ -137,16 +151,30 @@ curl -sS --fail-with-body -X POST 'http://127.0.0.1:8000/api/fetch' \
 Inspect extraction and fallback details without printing the entire page:
 
 ```sh
-curl -sS -X POST 'http://127.0.0.1:8000/api/fetch' \
+curl -sS -X POST 'http://127.0.0.1:7890/api/fetch' \
   -H 'Content-Type: application/json' \
   -d '{"url":"https://www.iso.org/standard/87210.html","timeout_seconds":90}' \
   | jq '{code, message, strategy: .meta.strategy, final_url: .meta.final_url, attempts: .meta.attempts}'
 ```
 
+Successful fetch responses also contain Trafilatura's semantic metadata
+directly in `meta.page`:
+
+```sh
+curl -sS -X POST 'http://127.0.0.1:7890/api/fetch' \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://www.iso.org/standard/87210.html","timeout_seconds":90}' \
+  | jq '.meta.page | {title, author, date, description, sitename, categories, tags, image, pagetype, language, url}'
+```
+
+Available fields include title, author, description, date, sitename, categories,
+tags, image, page type, language, URL, hostname, fingerprint, ID, and license.
+The extracted Markdown/text remains in `data`.
+
 ### Read robots.txt
 
 ```sh
-curl -sS --fail-with-body --get 'http://127.0.0.1:8000/api/robots' \
+curl -sS --fail-with-body --get 'http://127.0.0.1:7890/api/robots' \
   --data-urlencode 'url=https://www.iso.org/' \
   | jq -e 'if .code == 0 then .data else error(.message) end'
 ```
@@ -157,7 +185,7 @@ curl -sS --fail-with-body --get 'http://127.0.0.1:8000/api/robots' \
 for jq processing.
 
 ```sh
-curl -sS --fail-with-body --get 'http://127.0.0.1:8000/api/sitemap' \
+curl -sS --fail-with-body --get 'http://127.0.0.1:7890/api/sitemap' \
   --data-urlencode 'url=https://www.iso.org/sitemap/standard.xml' \
   | jq -e 'if .code == 0 then .data | fromjson[:20][] else error(.message) end'
 ```
@@ -175,7 +203,7 @@ intermittent 403, such as ISO.
 Each result exposes the full attempt trace:
 
 ```sh
-curl -sS --get 'http://127.0.0.1:8000/api/robots' \
+curl -sS --get 'http://127.0.0.1:7890/api/robots' \
   --data-urlencode 'url=https://www.iso.org/' \
   | jq '{code, message, attempts: .meta.attempts}'
 ```
@@ -197,7 +225,7 @@ HTTP status, and errors. If a client prints `null`, inspect the entire envelope
 rather than treating it as extracted content:
 
 ```sh
-curl -sS --get 'http://127.0.0.1:8000/api/robots' \
+curl -sS --get 'http://127.0.0.1:7890/api/robots' \
   --data-urlencode 'url=https://www.iso.org/' \
   | jq '{code, message, attempts: .meta.attempts}'
 ```

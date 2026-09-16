@@ -118,7 +118,7 @@ main() {
   ensure_compose
   prepare_source
 
-  FETCHER_PORT="${FETCHER_PORT:-8000}"
+  FETCHER_PORT="${FETCHER_PORT:-7890}"
   if lsof -nP -iTCP:"$FETCHER_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
     die "Port $FETCHER_PORT is already in use. Re-run with FETCHER_PORT=8003 or stop the conflicting service."
   fi

@@ -6,7 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     FETCHER_HOST=0.0.0.0 \
-    FETCHER_PORT=8000
+    FETCHER_PORT=7890
 
 WORKDIR /srv/app
 
@@ -30,6 +30,6 @@ RUN useradd --create-home --uid 10001 appuser \
     && chown -R appuser:appuser /srv/app /tmp/fetcher /ms-playwright
 
 USER appuser
-EXPOSE 8000
+EXPOSE 7890
 
 CMD ["sh", "-c", ".venv/bin/uvicorn app.main:app --host ${FETCHER_HOST} --port ${FETCHER_PORT}"]
