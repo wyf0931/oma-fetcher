@@ -29,24 +29,17 @@
           </ul>
         </div>
         <div class="navbar-end ml-3 flex w-auto items-center gap-2">
-          <span class="badge badge-ghost text-xs" x-text="apiClient.hasKey() ? 'key set' : 'local mode'"></span>
           <button class="btn btn-circle btn-ghost btn-sm" title="Clear API key" aria-label="Clear API key" @click="clearKey()"><i data-lucide="log-out" class="size-4"></i></button>
         </div>
       </header>
 
       <main class="mx-auto max-w-7xl px-5 py-8 lg:px-10">
-        <div class="breadcrumbs mb-3 text-sm text-base-content/60"><ul><li>Reader library</li><li x-text="view === 'dataset' ? 'Dataset' : 'Keys'"></li></ul></div>
-
         <section x-show="view === 'dataset'" x-cloak>
-          <div class="mb-6 flex flex-wrap items-end justify-between gap-4">
-            <div><h1 class="text-3xl font-semibold tracking-tight">Saved research</h1><p class="mt-1 text-sm text-base-content/60">Browse documents collected by the fetch pipeline.</p></div>
-            <div class="stats stats-horizontal border border-base-300 bg-base-100 shadow-sm"><div class="stat px-5 py-3"><div class="stat-title text-xs">Documents</div><div class="stat-value text-2xl" x-text="pagination.total"></div></div></div>
-          </div>
-          <form @submit.prevent="loadDocuments(1)" class="mb-5 grid gap-4 rounded-box border border-base-300 bg-base-100 p-4 shadow-sm md:grid-cols-12">
-            <label class="form-control md:col-span-6"><div class="label py-0"><span class="label-text text-xs font-medium">Title or content</span></div><input class="input input-bordered input-sm" x-model="filters.content" placeholder="Search saved text…" /></label>
-            <label class="form-control md:col-span-3"><div class="label py-0"><span class="label-text text-xs font-medium">Site name</span></div><input class="input input-bordered input-sm" x-model="filters.sitename" placeholder="e.g. ISO" /></label>
-            <label class="form-control md:col-span-3"><div class="label py-0"><span class="label-text text-xs font-medium">Tags</span></div><input class="input input-bordered input-sm" x-model="filters.tags" placeholder="e.g. standard" /></label>
-            <div class="flex items-center gap-2 md:col-span-12"><button class="btn btn-sm btn-neutral" type="submit"><i data-lucide="search" class="size-4"></i>Search</button><button class="btn btn-sm btn-ghost" type="button" @click="resetFilters()">Clear</button></div>
+          <div class="mb-6"><h1 class="text-3xl font-semibold tracking-tight">Saved research</h1><p class="mt-1 text-sm text-base-content/60">Browse documents collected by the fetch pipeline.</p></div>
+          <form @submit.prevent="loadDocuments(1)" class="mb-5 grid grid-cols-1 gap-3 rounded-box border border-base-300 bg-base-100 p-4 shadow-sm md:grid-cols-3">
+            <label class="input input-bordered input-sm flex items-center gap-2"><i data-lucide="search" class="size-4 text-base-content/50"></i><input aria-label="Title or content" x-model="filters.content" placeholder="Title or content…" /></label>
+            <label class="input input-bordered input-sm flex items-center gap-2"><i data-lucide="globe-2" class="size-4 text-base-content/50"></i><input aria-label="Site name" x-model="filters.sitename" placeholder="Site name…" /></label>
+            <label class="input input-bordered input-sm flex items-center gap-2"><i data-lucide="tags" class="size-4 text-base-content/50"></i><input aria-label="Tags" x-model="filters.tags" placeholder="Tags…" /></label>
           </form>
 
           <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100 shadow-sm">
@@ -67,8 +60,8 @@
       </main>
 
       <dialog class="modal" :open="showAuthDialog" x-cloak><div class="modal-box"><h3 class="text-lg font-semibold">Connect to OMA Fetcher</h3><p class="py-3 text-sm text-base-content/60">Enter an API key to access this service. It stays in this browser's local storage.</p><input class="input input-bordered w-full" type="password" x-model="authInput" placeholder="Bearer token" @keydown.enter="saveKey()" /><div class="modal-action"><button class="btn btn-neutral" @click="saveKey()">Continue</button></div></div></dialog>
-      <dialog class="modal" :open="showKeyDialog" x-cloak><div class="modal-box"><h3 class="text-lg font-semibold">Create API key</h3><p class="py-2 text-sm text-base-content/60">The token is shown once. Copy it before closing.</p><input class="input input-bordered w-full" x-model="newKeyName" placeholder="Name, e.g. temporary-reader" @keydown.enter="createKey()" /><div class="modal-action"><button class="btn btn-ghost" @click="showKeyDialog=false">Cancel</button><button class="btn btn-neutral" @click="createKey()" :disabled="!newKeyName.trim()">Create key</button></div><div class="alert alert-success mt-4" x-show="createdToken" x-cloak><span class="break-all font-mono text-xs" x-text="createdToken"></span><button class="btn btn-xs" @click="copyText(createdToken)">Copy</button></div></div></dialog>
-      <dialog class="modal" :open="detailDialog" x-cloak><div class="modal-box max-w-4xl"><div class="flex items-start justify-between"><div><h3 class="text-lg font-semibold" x-text="detail?.title || '(untitled)'"></h3><p class="text-xs text-base-content/50" x-text="detail?.url"></p></div><button class="btn btn-circle btn-ghost btn-sm" @click="detailDialog=false"><i data-lucide="x" class="size-4"></i></button></div><div class="mt-5 grid gap-4 md:grid-cols-3"><div class="md:col-span-2"><div class="label"><span class="label-text text-xs">Content</span></div><pre class="max-h-[55vh] overflow-auto whitespace-pre-wrap rounded-box bg-base-200 p-4 text-sm leading-6" x-text="detail?.content"></pre></div><div><div class="label"><span class="label-text text-xs">Metadata</span></div><pre class="max-h-[55vh] overflow-auto rounded-box bg-base-200 p-4 text-xs" x-text="detail ? JSON.stringify(detail.page || {}, null, 2) : ''"></pre></div></div></div></dialog>
+      <dialog class="modal" :open="showKeyDialog" x-cloak><div class="modal-box"><h3 class="text-lg font-semibold">Create API key</h3><p class="py-2 text-sm text-base-content/60">Give the key a name for this reader or agent.</p><input class="input input-bordered w-full" x-model="newKeyName" placeholder="Name, e.g. temporary-reader" @keydown.enter="createKey()" /><div class="modal-action"><button class="btn btn-ghost" @click="showKeyDialog=false">Cancel</button><button class="btn btn-neutral" @click="createKey()" :disabled="!newKeyName.trim()">Create key</button></div></div></dialog>
+      <dialog class="modal" :open="detailDialog" x-cloak><div class="modal-box max-w-4xl"><div class="flex items-start justify-between"><div><h3 class="text-lg font-semibold" x-text="detail?.title || '(untitled)'"></h3><p class="text-xs text-base-content/50" x-text="detail?.url"></p></div><button class="btn btn-circle btn-ghost btn-sm" aria-label="Close document" @click="detailDialog=false"><i data-lucide="x" class="size-4"></i></button></div><div class="mt-5 grid gap-4 md:grid-cols-3"><div class="md:col-span-2"><div class="mb-2 flex items-center justify-between"><span class="label-text text-xs font-medium">Content</span><button class="btn btn-ghost btn-sm" aria-label="Copy content" title="Copy content" @click="copyContent()"><i data-lucide="copy" class="size-4"></i></button></div><pre class="max-h-[55vh] overflow-auto whitespace-pre-wrap rounded-box bg-base-200 p-4 text-sm leading-6" x-text="detail?.content"></pre></div><div><div class="label"><span class="label-text text-xs">Metadata</span></div><pre class="max-h-[55vh] overflow-auto rounded-box bg-base-200 p-4 text-xs" x-text="detail ? JSON.stringify(detail.page || {}, null, 2) : ''"></pre></div></div></div></dialog>
       <div class="toast toast-end" x-show="toast" x-cloak><div class="alert" :class="toastType === 'error' ? 'alert-error' : 'alert-success'"><span x-text="toast"></span></div></div>
     </div>
     <script src="api-client.js"></script><script src="app.js"></script>
