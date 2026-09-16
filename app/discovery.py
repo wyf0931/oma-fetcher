@@ -6,6 +6,7 @@ import asyncio
 import logging
 import random
 from collections import deque
+from typing import TYPE_CHECKING
 from urllib.parse import urljoin, urlsplit, urlunsplit
 from xml.etree import ElementTree
 
@@ -13,6 +14,9 @@ import httpx
 
 from .config import Settings
 from .safety import validate_public_url
+
+if TYPE_CHECKING:
+    from .storage import DocumentStore, FetchRoute
 
 
 class DiscoveryError(RuntimeError):
@@ -38,7 +42,7 @@ def is_usable_discovery_response(response: httpx.Response) -> bool:
     return response.status_code == 404 or (response.status_code == 200 and bool(response.content.strip()))
 
 
-async def _get(url: str, config: Settings, timeout: float = 15) -> httpx.Response:
+async def _get(url: str, config: Settings, timeout: float = 15, preferred_strategy: str | None = None) -> httpx.Response:
     validate_public_url(url, allow_private=config.allow_private_networks)
     attempts: list[dict[str, object]] = []
 
@@ -53,11 +57,12 @@ async def _get(url: str, config: Settings, timeout: float = 15) -> httpx.Respons
         attempts.append(attempt)
         logger.info("discovery.fetch url=%s strategy=%s round=%s status=%s error=%s reason=%s", url, strategy, round_number, status, attempt.get("error", ""), reason or "")
 
-    def success(response: httpx.Response) -> httpx.Response:
+    def success(response: httpx.Response, strategy: str) -> httpx.Response:
         validate_public_url(str(response.url), allow_private=config.allow_private_networks)
         if len(response.content) > config.max_response_bytes:
             raise DiscoveryError("response exceeds configured size limit")
         response.extensions["fetch_attempts"] = attempts
+        response.extensions["fetch_strategy"] = strategy
         return response
 
     def curl_cffi_get() -> httpx.Response:
@@ -113,43 +118,30 @@ async def _get(url: str, config: Settings, timeout: float = 15) -> httpx.Respons
             request=httpx.Request("GET", str(fetched.url)),
         )
 
+    async def httpx_get() -> httpx.Response:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers={"User-Agent": config.user_agent}, proxy=config.active_proxy_url, trust_env=False) as client:
+            return await client.get(url)
+
+    fetchers = {
+        "httpx": httpx_get,
+        "curl_cffi": lambda: asyncio.to_thread(curl_cffi_get),
+        "scrapling": lambda: asyncio.to_thread(scrapling_get),
+        "scrapling_stealth": lambda: asyncio.to_thread(scrapling_stealth_get),
+    }
+    strategy_order = list(fetchers)
+    if preferred_strategy in fetchers:
+        strategy_order = [preferred_strategy] + [name for name in strategy_order if name != preferred_strategy]
+
     for round_number in range(1, config.discovery_retries + 2):
-        try:
-            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers={"User-Agent": config.user_agent}, proxy=config.active_proxy_url, trust_env=False) as client:
-                response = await client.get(url)
-            if is_usable_discovery_response(response):
-                record("httpx", round_number, status=response.status_code)
-                return success(response)
-            record("httpx", round_number, status=response.status_code, reason="discovery requires HTTP 200 with non-empty content, or HTTP 404")
-        except httpx.HTTPError as exc:
-            record("httpx", round_number, error=exc)
-
-        try:
-            response = await asyncio.to_thread(curl_cffi_get)
-            if is_usable_discovery_response(response):
-                record("curl_cffi", round_number, status=response.status_code)
-                return success(response)
-            record("curl_cffi", round_number, status=response.status_code, reason="discovery requires HTTP 200 with non-empty content, or HTTP 404")
-        except Exception as exc:
-            record("curl_cffi", round_number, error=exc)
-
-        try:
-            response = await asyncio.to_thread(scrapling_get)
-            if is_usable_discovery_response(response):
-                record("scrapling", round_number, status=response.status_code)
-                return success(response)
-            record("scrapling", round_number, status=response.status_code, reason="discovery requires HTTP 200 with non-empty content, or HTTP 404")
-        except Exception as exc:
-            record("scrapling", round_number, error=exc)
-
-        try:
-            response = await asyncio.to_thread(scrapling_stealth_get)
-            if is_usable_discovery_response(response):
-                record("scrapling_stealth", round_number, status=response.status_code)
-                return success(response)
-            record("scrapling_stealth", round_number, status=response.status_code, reason="discovery requires HTTP 200 with non-empty content, or HTTP 404")
-        except Exception as exc:
-            record("scrapling_stealth", round_number, error=exc)
+        for strategy in strategy_order:
+            try:
+                response = await fetchers[strategy]()
+                if is_usable_discovery_response(response):
+                    record(strategy, round_number, status=response.status_code)
+                    return success(response, strategy)
+                record(strategy, round_number, status=response.status_code, reason="discovery requires HTTP 200 with non-empty content, or HTTP 404")
+            except Exception as exc:
+                record(strategy, round_number, error=exc)
 
         if round_number <= config.discovery_retries:
             delay = config.discovery_retry_delay * round_number + random.uniform(0, config.discovery_retry_delay)
@@ -158,13 +150,16 @@ async def _get(url: str, config: Settings, timeout: float = 15) -> httpx.Respons
     raise DiscoveryFetchError("all discovery fetch strategies were rejected or failed", attempts)
 
 
-async def robots(url: str, config: Settings) -> tuple[str, dict[str, object]]:
+async def robots(url: str, config: Settings, route_store: "DocumentStore | None" = None) -> tuple[str, dict[str, object]]:
     robots_url = urljoin(origin_for(url) + "/", "robots.txt")
-    response = await _get(robots_url, config)
+    hostname = urlsplit(robots_url).hostname or ""
+    route = _route_for(route_store, hostname, "robots")
+    response = await _get(robots_url, config, preferred_strategy=route.strategy if route else None)
     if response.status_code == 404:
         return "", {"url": str(response.url), "status_code": 404, "found": False, "attempts": response.extensions.get("fetch_attempts", [])}
     if not response.is_success:
         raise DiscoveryFetchError(f"robots.txt returned HTTP {response.status_code}", response.extensions.get("fetch_attempts", []))
+    _record_route_success(route_store, hostname, "robots", response, route, "robots_text", config)
     return response.text, {"url": str(response.url), "status_code": response.status_code, "found": True, "attempts": response.extensions.get("fetch_attempts", [])}
 
 
@@ -185,14 +180,14 @@ def _parse_sitemap(body: bytes) -> tuple[list[str], list[str]]:
     return (locations, []) if kind == "urlset" else ([], locations) if kind == "sitemapindex" else ([], [])
 
 
-async def sitemap(url: str, config: Settings) -> tuple[str, dict[str, object]]:
+async def sitemap(url: str, config: Settings, route_store: "DocumentStore | None" = None) -> tuple[str, dict[str, object]]:
     origin = origin_for(url)
     explicit = url.lower().endswith((".xml", ".xml.gz"))
     robots_text = ""
     robots_meta: dict[str, object] = {}
     if not explicit:
         try:
-            robots_text, robots_meta = await robots(origin, config)
+            robots_text, robots_meta = await robots(origin, config, route_store)
         except DiscoveryError:
             robots_meta = {"found": False}
     candidates = [url] if explicit else sitemap_declarations(robots_text) + [urljoin(origin + "/", path) for path in ("sitemap.xml", "sitemap_index.xml")]
@@ -204,12 +199,20 @@ async def sitemap(url: str, config: Settings) -> tuple[str, dict[str, object]]:
         if sitemap_url in seen_maps or depth > config.sitemap_max_depth:
             continue
         seen_maps.add(sitemap_url)
+        hostname = urlsplit(sitemap_url).hostname or ""
+        route = _route_for(route_store, hostname, "sitemap")
         try:
-            response = await _get(sitemap_url, config)
+            response = await _get(sitemap_url, config, preferred_strategy=route.strategy if route else None)
             if not response.is_success:
                 continue
             leaves, children = _parse_sitemap(response.content)
+            _record_route_success(route_store, hostname, "sitemap", response, route, "sitemap_xml", config)
         except (DiscoveryError, httpx.HTTPError):
+            if route_store and route and hostname:
+                try:
+                    route_store.record_route_failure(hostname=hostname, target_kind="sitemap", strategy=route.strategy)
+                except Exception:
+                    pass
             continue
         for leaf in leaves:
             if len(urls) >= config.sitemap_max_urls:
@@ -238,3 +241,40 @@ async def sitemap(url: str, config: Settings) -> tuple[str, dict[str, object]]:
         "count": len(urls),
         "truncated": len(urls) >= config.sitemap_max_urls,
     }
+
+
+def _route_for(route_store: "DocumentStore | None", hostname: str, target_kind: str) -> "FetchRoute | None":
+    if not route_store or not route_store.available or not hostname:
+        return None
+    try:
+        return route_store.get_route(hostname, target_kind)
+    except Exception:
+        return None
+
+
+def _record_route_success(
+    route_store: "DocumentStore | None",
+    hostname: str,
+    target_kind: str,
+    response: httpx.Response,
+    previous_route: "FetchRoute | None",
+    extraction_method: str,
+    config: Settings,
+) -> None:
+    if not route_store or not route_store.available or not hostname:
+        return
+    strategy = response.extensions.get("fetch_strategy")
+    if not isinstance(strategy, str):
+        return
+    try:
+        if previous_route and previous_route.strategy != strategy:
+            route_store.record_route_failure(hostname=hostname, target_kind=target_kind, strategy=previous_route.strategy)
+        route_store.record_route_success(
+            hostname=hostname,
+            target_kind=target_kind,
+            strategy=strategy,
+            extraction_method=extraction_method,
+            ttl_hours=config.fetch_route_ttl_hours,
+        )
+    except Exception:
+        return

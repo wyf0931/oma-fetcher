@@ -65,3 +65,17 @@ def test_search_uses_title_tags_content_and_filters(tmp_path: Path) -> None:
 
 def test_normalize_tags_splits_comma_separated_metadata() -> None:
     assert DocumentStore.normalize_tags(["意见,国家标准", "市场，监管", "国家标准"]) == ["意见", "国家标准", "市场", "监管"]
+
+
+def test_successful_route_is_reused_then_expired_on_failure(tmp_path: Path) -> None:
+    store = make_store(tmp_path)
+    store.record_route_success(
+        hostname="itu.int",
+        target_kind="page",
+        strategy="scrapling_stealth",
+        extraction_method="article_cards",
+        ttl_hours=168,
+    )
+    assert store.get_route("www.itu.int", "page").strategy == "scrapling_stealth"
+    store.record_route_failure(hostname="itu.int", target_kind="page", strategy="scrapling_stealth")
+    assert store.get_route("itu.int", "page") is None

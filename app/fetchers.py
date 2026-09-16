@@ -51,6 +51,7 @@ class EscalatingFetcher:
         timeout_seconds: int,
         strategy: str = "auto",
         accept: Callable[[FetchResult], Awaitable[bool]] | None = None,
+        preferred_strategy: str | None = None,
     ) -> tuple[FetchResult, list[dict[str, str]]]:
         validate_public_url(url, allow_private=self.config.allow_private_networks)
         attempts: list[dict[str, str]] = []
@@ -59,6 +60,8 @@ class EscalatingFetcher:
         ]
         if strategy != "auto":
             names = [strategy]  # type: ignore[list-item]
+        elif preferred_strategy in names:
+            names = [preferred_strategy] + [name for name in names if name != preferred_strategy]
         deadline = monotonic() + timeout_seconds
         for name in names:
             remaining = deadline - monotonic()

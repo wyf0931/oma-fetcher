@@ -175,6 +175,13 @@ records.
   policy check rejected the request. Report `message` and `meta.attempts`.
 - A 403 in an earlier attempt is expected for protected sites if a later stage
   succeeds. Report the winning `strategy`, not the earlier 403 as final failure.
+- Read `meta.failback` when present. It reports whether a cached
+  hostname/target-kind route was used, which strategy was accepted, and safe
+  quality signals such as `rendered_article_cards`; it never includes proxy
+  settings or credentials.
+- A 200 response can still be rejected when it contains cookie/browser fallback
+  text. Listing pages can instead return Markdown extracted from rendered
+  article cards, with `meta.content_kind` set to `listing`.
 - Do not retry aggressively from the shell. The service already applies
   bounded retries; repeated manual calls can increase WAF rate limiting.
 - The service rejects private, loopback, and non-routable URLs by default.

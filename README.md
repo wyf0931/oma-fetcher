@@ -268,6 +268,35 @@ curl -sS --fail-with-body --get 'http://127.0.0.1:7890/api/sitemap' \
 finally Playwright. It also escalates if Trafilatura cannot extract meaningful
 main content.
 
+### Smart failback
+
+HTTP success is not treated as content success. The assessor distinguishes
+article text, rendered listing cards, robots directives, and sitemap XML from
+cookie/browser fallback text, empty 202 responses, and anti-bot placeholders.
+For example, an ITU news-listing page whose Trafilatura output is a browser
+support message is rendered as a Markdown card list instead of being stored as
+that message.
+
+Successful routes are cached in SQLite by normalized hostname and target kind
+(`page`, `robots`, or `sitemap`) for seven days by default. The next request
+starts with the most recently successful strategy; if it fails, the cache entry
+is expired and the complete failback chain resumes. Configure the route TTL:
+
+```dotenv
+FETCH_ROUTE_TTL_HOURS=168
+```
+
+`meta.failback` provides non-sensitive diagnostics:
+
+```json
+{
+  "route_hit": true,
+  "preferred_strategy": "httpx",
+  "accepted_strategy": "httpx",
+  "signals": ["rendered_article_cards"]
+}
+```
+
 Discovery endpoints use `httpx → curl-cffi → Scrapling HTTP → Scrapling stealth
 browser`, then retry the whole chain with bounded jitter. The browser stage is
 only launched when the lighter strategies cannot return an actual robots or

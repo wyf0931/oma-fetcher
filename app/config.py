@@ -22,6 +22,7 @@ class Settings:
     storage_path: str = field(default_factory=lambda: os.getenv("STORAGE_DB_PATH", "data/research.db"))
     storage_save_default: bool = field(default_factory=lambda: _as_bool("STORAGE_SAVE_DEFAULT", False))
     storage_user_dict_path: str = field(default_factory=lambda: os.getenv("STORAGE_USER_DICT_PATH", "dictionaries/custom.txt"))
+    fetch_route_ttl_hours: int = field(default_factory=lambda: int(os.getenv("FETCH_ROUTE_TTL_HOURS", "168")))
     proxy_enabled: bool = field(default_factory=lambda: _as_bool("PROXY_ENABLED", False))
     proxy_url: str = field(default_factory=lambda: os.getenv("PROXY_URL", "").strip())
 
