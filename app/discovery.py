@@ -42,7 +42,7 @@ async def _get(url: str, config: Settings, timeout: float = 15) -> httpx.Respons
         if status is not None:
             attempt["status_code"] = status
         if error is not None:
-            attempt["error"] = str(error).replace("\n", " ")[:180] or error.__class__.__name__
+            attempt["error"] = config.redact(str(error).replace("\n", " ")[:180]) or error.__class__.__name__
         attempts.append(attempt)
         logger.info("discovery.fetch url=%s strategy=%s round=%s status=%s error=%s", url, strategy, round_number, status, attempt.get("error", ""))
 
@@ -59,12 +59,17 @@ async def _get(url: str, config: Settings, timeout: float = 15) -> httpx.Respons
         # Some WAF error pages advertise gzip but send an undecodable body.
         # Identity encoding avoids losing a valid robots/sitemap response to
         # that protocol mismatch while retaining curl-cffi's TLS fingerprint.
+        options = {
+            "impersonate": "chrome",
+            "timeout": timeout,
+            "allow_redirects": True,
+            "headers": {"Accept-Encoding": "identity"},
+        }
+        if config.proxy_mapping:
+            options["proxies"] = config.proxy_mapping
         fetched = requests.get(
             url,
-            impersonate="chrome",
-            timeout=timeout,
-            allow_redirects=True,
-            headers={"Accept-Encoding": "identity"},
+            **options,
         )
         return httpx.Response(
             fetched.status_code,
@@ -76,7 +81,10 @@ async def _get(url: str, config: Settings, timeout: float = 15) -> httpx.Respons
     def scrapling_get() -> httpx.Response:
         from scrapling.fetchers import Fetcher
 
-        fetched = Fetcher.get(url, impersonate="chrome", stealthy_headers=True, timeout=int(timeout))
+        options = {"impersonate": "chrome", "stealthy_headers": True, "timeout": int(timeout)}
+        if config.active_proxy_url:
+            options["proxy"] = config.active_proxy_url
+        fetched = Fetcher.get(url, **options)
         return httpx.Response(
             fetched.status,
             content=fetched.body,
@@ -86,7 +94,7 @@ async def _get(url: str, config: Settings, timeout: float = 15) -> httpx.Respons
 
     for round_number in range(1, config.discovery_retries + 2):
         try:
-            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers={"User-Agent": config.user_agent}) as client:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers={"User-Agent": config.user_agent}, proxy=config.active_proxy_url, trust_env=False) as client:
                 response = await client.get(url)
             record("httpx", round_number, status=response.status_code)
             if response.status_code not in {403, 429} and response.status_code < 500:
@@ -177,7 +185,7 @@ async def sitemap(url: str, config: Settings) -> tuple[str, dict[str, object]]:
         pending.extend((child, depth + 1) for child in children)
     # Trafilatura also knows site-specific sitemap conventions. It is a fallback
     # because the explicit parser above gives us strict limits and provenance.
-    if not urls and not explicit:
+    if not urls and not explicit and not config.proxy_enabled:
         try:
             from trafilatura.sitemaps import sitemap_search
 

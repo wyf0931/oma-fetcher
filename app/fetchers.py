@@ -79,14 +79,13 @@ class EscalatingFetcher:
                 attempts.append({"strategy": name, "reason": self._safe_reason(exc)})
         raise FetchError("all configured fetch strategies failed: " + "; ".join(a["reason"] for a in attempts))
 
-    @staticmethod
-    def _safe_reason(error: Exception) -> str:
-        message = str(error).replace("\n", " ")
+    def _safe_reason(self, error: Exception) -> str:
+        message = self.config.redact(str(error).replace("\n", " "))
         return (message[:220] or error.__class__.__name__)
 
     async def _httpx(self, url: str, timeout: float) -> FetchResult:
         headers = {"User-Agent": self.config.user_agent, "Accept": "text/html,application/xhtml+xml"}
-        async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=timeout) as client:
+        async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=timeout, proxy=self.config.active_proxy_url, trust_env=False) as client:
             response = await client.get(url)
             content = response.content[: self.config.max_response_bytes]
         return FetchResult(content.decode(response.encoding or "utf-8", errors="replace"), str(response.url), response.status_code, "httpx", response.headers.get("content-type", ""))
@@ -95,7 +94,10 @@ class EscalatingFetcher:
         def run() -> FetchResult:
             from curl_cffi import requests
 
-            response = requests.get(url, impersonate="chrome", timeout=timeout, allow_redirects=True)
+            options = {"impersonate": "chrome", "timeout": timeout, "allow_redirects": True}
+            if self.config.proxy_mapping:
+                options["proxies"] = self.config.proxy_mapping
+            response = requests.get(url, **options)
             return FetchResult(response.content[: self.config.max_response_bytes].decode("utf-8", errors="replace"), response.url, response.status_code, "curl_cffi", response.headers.get("content-type", ""))
         return await asyncio.to_thread(run)
 
@@ -103,7 +105,10 @@ class EscalatingFetcher:
         def run() -> FetchResult:
             from scrapling.fetchers import StealthyFetcher
 
-            page = StealthyFetcher.fetch(url, headless=True, timeout=int(timeout * 1000), block_webrtc=True)
+            options = {"headless": True, "timeout": int(timeout * 1000), "block_webrtc": True}
+            if self.config.active_proxy_url:
+                options["proxy"] = self.config.active_proxy_url
+            page = StealthyFetcher.fetch(url, **options)
             return FetchResult(page.html[: self.config.max_response_bytes], str(page.url), int(page.status), "scrapling", page.headers.get("content-type", ""))
         return await asyncio.to_thread(run)
 
@@ -111,7 +116,10 @@ class EscalatingFetcher:
         from playwright.async_api import async_playwright
 
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True, args=["--disable-dev-shm-usage"])
+            launch_options = {"headless": True, "args": ["--disable-dev-shm-usage"]}
+            if self.config.browser_proxy:
+                launch_options["proxy"] = self.config.browser_proxy
+            browser = await p.chromium.launch(**launch_options)
             try:
                 page = await browser.new_page(user_agent=self.config.user_agent)
                 response = await page.goto(url, wait_until="domcontentloaded", timeout=int(timeout * 1000))

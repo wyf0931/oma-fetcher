@@ -58,9 +58,11 @@ performs a local Docker build:
 curl -fsSL https://raw.githubusercontent.com/wyf0931/oma-fetcher/main/scripts/install-macos.sh | bash
 ```
 
-The script defaults to `~/oma-fetcher` and port 7890. Explain that macOS
-`127.0.0.1` proxies are not automatically reachable from Colima containers;
-use `FETCHER_RUNTIME_PROXY` only with an address reachable from that VM.
+The script defaults to `~/oma-fetcher` and port 7890. Docker Compose reads
+`PROXY_ENABLED=off|on` and `PROXY_URL` from `.env`; when enabled it applies the
+same proxy URL to all fetch strategies. Keep credentials in the ignored `.env`
+file, not in commands, logs, or source control. macOS `127.0.0.1` proxies are
+not automatically reachable from Colima containers.
 
 ## Fetch and extract one page
 

@@ -110,19 +110,43 @@ Stop the deployment with `docker compose down`.
 
 ### Colima and proxy configuration
 
-When the running service needs a proxy, it must be reachable from the Colima VM/container.
-macOS `127.0.0.1:7897` is not automatically reachable inside a container.
-Provide a reachable proxy endpoint explicitly:
+When the running service needs a proxy, Docker Compose reads `PROXY_ENABLED`
+and `PROXY_URL` from `.env`. The default is direct outbound traffic:
 
 ```sh
-export FETCHER_RUNTIME_PROXY=http://REACHABLE_PROXY_HOST:7897
-docker compose pull && docker compose up -d
+cp .env.example .env
+# Edit .env only if a proxy is required.
+PROXY_ENABLED=off
 ```
 
-Host-side `http_proxy=http://127.0.0.1:7897` can still help local tools, but
-Compose intentionally does not forward it into the container. The one-command
-installer uses the public `ghcr.io/wyf0931/oma-fetcher:latest` image; set
-`FETCHER_IMAGE` to pin a SHA-tagged release image when needed.
+To force **every fetch strategy** through an authenticated proxy, set:
+
+```sh
+PROXY_ENABLED=on
+PROXY_URL=http://USERNAME:PASSWORD@p.webshare.io:80/
+```
+
+Then restart the service:
+
+```sh
+docker compose pull
+docker compose up -d --force-recreate
+```
+
+`PROXY_URL` is passed to HTTPX, curl-cffi, Scrapling, and Playwright. It is not
+returned by the API or written to logs; logs redact the username and password.
+Keep `.env` private. Use `.env.example` as the committed template. macOS
+`127.0.0.1` proxies are not automatically reachable inside Colima containers.
+
+To validate that the container exits through the proxy, fetch the Webshare IP
+endpoint through the reader after enabling the proxy:
+
+```sh
+curl -sS -X POST 'http://127.0.0.1:7890/api/fetch' \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://ipv4.webshare.io/","strategy":"httpx"}' \
+  | jq '{code, proxy_enabled: .meta.proxy_enabled, ip: .data}'
+```
 
 ## API
 
