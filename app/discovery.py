@@ -33,18 +33,25 @@ def origin_for(url: str) -> str:
     return urlunsplit((parsed.scheme, parsed.netloc, "", "", ""))
 
 
+def is_usable_discovery_response(response: httpx.Response) -> bool:
+    """Robots and sitemap discovery require an actual document, not an async placeholder."""
+    return response.status_code == 404 or (response.status_code == 200 and bool(response.content.strip()))
+
+
 async def _get(url: str, config: Settings, timeout: float = 15) -> httpx.Response:
     validate_public_url(url, allow_private=config.allow_private_networks)
     attempts: list[dict[str, object]] = []
 
-    def record(strategy: str, round_number: int, *, status: int | None = None, error: Exception | None = None) -> None:
+    def record(strategy: str, round_number: int, *, status: int | None = None, error: Exception | None = None, reason: str | None = None) -> None:
         attempt: dict[str, object] = {"strategy": strategy, "round": round_number}
         if status is not None:
             attempt["status_code"] = status
         if error is not None:
             attempt["error"] = config.redact(str(error).replace("\n", " ")[:180]) or error.__class__.__name__
+        if reason:
+            attempt["reason"] = reason
         attempts.append(attempt)
-        logger.info("discovery.fetch url=%s strategy=%s round=%s status=%s error=%s", url, strategy, round_number, status, attempt.get("error", ""))
+        logger.info("discovery.fetch url=%s strategy=%s round=%s status=%s error=%s reason=%s", url, strategy, round_number, status, attempt.get("error", ""), reason or "")
 
     def success(response: httpx.Response) -> httpx.Response:
         validate_public_url(str(response.url), allow_private=config.allow_private_networks)
@@ -92,31 +99,57 @@ async def _get(url: str, config: Settings, timeout: float = 15) -> httpx.Respons
             request=httpx.Request("GET", str(fetched.url)),
         )
 
+    def scrapling_stealth_get() -> httpx.Response:
+        from scrapling.fetchers import StealthyFetcher
+
+        options = {"headless": True, "network_idle": True, "timeout": int(timeout * 1000), "block_webrtc": True}
+        if config.active_proxy_url:
+            options["proxy"] = config.active_proxy_url
+        fetched = StealthyFetcher.fetch(url, **options)
+        return httpx.Response(
+            fetched.status,
+            content=fetched.body,
+            headers={"content-type": fetched.headers.get("content-type", "")},
+            request=httpx.Request("GET", str(fetched.url)),
+        )
+
     for round_number in range(1, config.discovery_retries + 2):
         try:
             async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers={"User-Agent": config.user_agent}, proxy=config.active_proxy_url, trust_env=False) as client:
                 response = await client.get(url)
-            record("httpx", round_number, status=response.status_code)
-            if response.status_code not in {403, 429} and response.status_code < 500:
+            if is_usable_discovery_response(response):
+                record("httpx", round_number, status=response.status_code)
                 return success(response)
+            record("httpx", round_number, status=response.status_code, reason="discovery requires HTTP 200 with non-empty content, or HTTP 404")
         except httpx.HTTPError as exc:
             record("httpx", round_number, error=exc)
 
         try:
             response = await asyncio.to_thread(curl_cffi_get)
-            record("curl_cffi", round_number, status=response.status_code)
-            if response.status_code not in {403, 429} and response.status_code < 500:
+            if is_usable_discovery_response(response):
+                record("curl_cffi", round_number, status=response.status_code)
                 return success(response)
+            record("curl_cffi", round_number, status=response.status_code, reason="discovery requires HTTP 200 with non-empty content, or HTTP 404")
         except Exception as exc:
             record("curl_cffi", round_number, error=exc)
 
         try:
             response = await asyncio.to_thread(scrapling_get)
-            record("scrapling", round_number, status=response.status_code)
-            if response.status_code not in {403, 429} and response.status_code < 500:
+            if is_usable_discovery_response(response):
+                record("scrapling", round_number, status=response.status_code)
                 return success(response)
+            record("scrapling", round_number, status=response.status_code, reason="discovery requires HTTP 200 with non-empty content, or HTTP 404")
         except Exception as exc:
             record("scrapling", round_number, error=exc)
+
+        try:
+            response = await asyncio.to_thread(scrapling_stealth_get)
+            if is_usable_discovery_response(response):
+                record("scrapling_stealth", round_number, status=response.status_code)
+                return success(response)
+            record("scrapling_stealth", round_number, status=response.status_code, reason="discovery requires HTTP 200 with non-empty content, or HTTP 404")
+        except Exception as exc:
+            record("scrapling_stealth", round_number, error=exc)
 
         if round_number <= config.discovery_retries:
             delay = config.discovery_retry_delay * round_number + random.uniform(0, config.discovery_retry_delay)

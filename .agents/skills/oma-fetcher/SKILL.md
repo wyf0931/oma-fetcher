@@ -164,10 +164,12 @@ curl -sS --get "$OMA_FETCHER_BASE_URL/api/sitemap" \
 
 ## Diagnose fallback behavior
 
-Discovery follows `httpx → curl-cffi → Scrapling` and retries the complete
-chain with bounded jitter. Page fetching additionally escalates to the
-Scrapling stealth browser and Playwright. Every completed attempt appears in
-`meta.attempts`; server logs contain matching `discovery.fetch` records.
+Discovery follows `httpx → curl-cffi → Scrapling HTTP → Scrapling stealth
+browser` and retries the complete chain with bounded jitter. An empty HTTP 202
+is not treated as a robots/sitemap success; it escalates to the next strategy.
+Page fetching additionally escalates to Playwright. Every completed attempt
+appears in `meta.attempts`; server logs contain matching `discovery.fetch`
+records.
 
 - `data: null` plus nonzero `code` means all eligible attempts failed or a
   policy check rejected the request. Report `message` and `meta.attempts`.

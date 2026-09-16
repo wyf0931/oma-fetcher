@@ -268,9 +268,10 @@ curl -sS --fail-with-body --get 'http://127.0.0.1:7890/api/sitemap' \
 finally Playwright. It also escalates if Trafilatura cannot extract meaningful
 main content.
 
-Discovery endpoints use `httpx → curl-cffi → Scrapling`, then retry the whole
-chain with bounded jitter. This matters for sites whose WAF returns an
-intermittent 403, such as ISO.
+Discovery endpoints use `httpx → curl-cffi → Scrapling HTTP → Scrapling stealth
+browser`, then retry the whole chain with bounded jitter. The browser stage is
+only launched when the lighter strategies cannot return an actual robots or
+sitemap document, such as IEC's empty HTTP 202 placeholder response.
 
 Each result exposes the full attempt trace:
 
