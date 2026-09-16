@@ -34,7 +34,7 @@ export OMA_FETCHER_BASE_URL="http://127.0.0.1:8003"
 ```
 
 For a managed background local instance, use `bin/ops.sh`. Its default is 7890
-and it supports `start`, `stop`, and `status` plus `-p PORT`:
+and it supports `start`, `stop`, `restart`, and `status` plus `-p PORT`:
 
 ```sh
 bin/ops.sh start -p 8003

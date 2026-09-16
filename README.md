@@ -70,10 +70,12 @@ the system temporary directory rather than the repository:
 ```sh
 bin/ops.sh start                 # http://127.0.0.1:7890
 bin/ops.sh status
+bin/ops.sh restart
 bin/ops.sh stop
 
 bin/ops.sh start -p 8003         # choose a different local port
 bin/ops.sh status -p 8003
+bin/ops.sh restart -p 8003
 bin/ops.sh stop -p 8003
 ```
 

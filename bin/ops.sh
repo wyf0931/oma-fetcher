@@ -8,11 +8,12 @@ PORT=7890
 
 usage() {
   cat <<'EOF'
-Usage: bin/ops.sh <start|stop|status> [-p PORT]
+Usage: bin/ops.sh <start|stop|restart|status> [-p PORT]
 
 Commands:
   start       Start OMA Fetcher in the background.
   stop        Stop the instance started for this port.
+  restart     Stop then start the instance for this port.
   status      Show process and health status.
 
 Options:
@@ -111,6 +112,11 @@ stop() {
   die "Process $pid did not stop within 10 seconds; inspect $LOG_FILE."
 }
 
+restart() {
+  stop
+  start
+}
+
 status() {
   remove_stale_pid
   if ! is_running; then
@@ -130,6 +136,7 @@ status() {
 case "$COMMAND" in
   start) start ;;
   stop) stop ;;
+  restart) restart ;;
   status) status ;;
   *) usage; die "Unknown command: $COMMAND" ;;
 esac
