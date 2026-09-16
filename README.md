@@ -3,6 +3,9 @@
 OMA Fetcher is a single-URL Web Reader and discovery API. It keeps discovery,
 fetching, and content extraction separate:
 
+For all request parameters, output values, and response fields, see the
+[API Reference](docs/api-reference.md).
+
 ```text
 robots.txt / sitemap discovery
               ↓

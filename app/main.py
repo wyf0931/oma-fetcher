@@ -111,23 +111,29 @@ async def fetch_page(payload: FetchRequest, persist: bool | None = Query(default
 
         async def has_extractable_content(result):
             nonlocal extracted, page_metadata, assessment
-            trafilatura_content = await asyncio.to_thread(
+            quality_text = await asyncio.to_thread(
                 trafilatura.extract,
                 result.html,
                 url=result.final_url,
-                output_format=payload.output_format,
-                with_metadata=payload.output_format in {"json", "xml"},
+                output_format="txt",
             )
             assessment = await asyncio.to_thread(
                 assess_page_content,
                 html=result.html,
                 url=result.final_url,
-                trafilatura_content=trafilatura_content or "",
+                trafilatura_content=quality_text or "",
+                output_format=payload.output_format,
             )
             if assessment.usable:
-                extracted = assessment.content
+                extracted = assessment.content if assessment.extraction_method == "article_cards" else await asyncio.to_thread(
+                    trafilatura.extract,
+                    result.html,
+                    url=result.final_url,
+                    output_format=payload.output_format,
+                    with_metadata=payload.output_format in {"json", "xml"},
+                )
                 page_metadata = await asyncio.to_thread(extract_page_metadata, result.html, result.final_url)
-            return assessment.usable
+            return bool(extracted)
 
         result, attempts = await fetcher.fetch(
             url,
