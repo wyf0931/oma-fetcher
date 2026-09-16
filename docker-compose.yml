@@ -18,6 +18,7 @@ services:
       API_ADMIN_KEY: ${API_ADMIN_KEY:-}
       API_KEY_PEPPER: ${API_KEY_PEPPER:-}
       API_DOCS_ENABLED: ${API_DOCS_ENABLED:-true}
+      WEB_CORS_ORIGINS: ${WEB_CORS_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}
     volumes:
       - ./data:/data
       - ./dictionaries:/dictionaries:ro
@@ -30,3 +31,14 @@ services:
       timeout: 3s
       retries: 3
       start_period: 20s
+
+  web:
+    image: nginx:alpine
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    volumes:
+      - ./web:/usr/share/nginx/html:ro
+    depends_on:
+      fetcher:
+        condition: service_healthy
+    restart: unless-stopped

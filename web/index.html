@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OMA Fetcher · Reader Library</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script src="https://unpkg.com/lucide@latest" defer></script>
+    <style>[x-cloak]{display:none!important}</style>
+  </head>
+  <body class="min-h-screen bg-base-200 text-base-content">
+    <div x-data="app()" x-init="init()" class="min-h-screen">
+      <header class="navbar border-b border-base-300 bg-base-100 px-5 lg:px-10">
+        <div class="flex-1 gap-3">
+          <div class="rounded-box bg-primary px-2 py-1 font-mono text-sm font-bold text-primary-content">OMA</div>
+          <span class="text-lg font-semibold tracking-tight">Reader library</span>
+        </div>
+        <nav class="flex gap-1" aria-label="Primary">
+          <button class="btn btn-sm" :class="view === 'dataset' ? 'btn-neutral' : 'btn-ghost'" @click="navigate('dataset')"><i data-lucide="library" class="size-4"></i>Dataset</button>
+          <button class="btn btn-sm" :class="view === 'keys' ? 'btn-neutral' : 'btn-ghost'" @click="navigate('keys')"><i data-lucide="key-round" class="size-4"></i>Keys</button>
+        </nav>
+        <div class="ml-3 flex items-center gap-2">
+          <span class="badge badge-ghost text-xs" x-text="apiClient.hasKey() ? 'key set' : 'local mode'"></span>
+          <button class="btn btn-circle btn-ghost btn-sm" title="Clear API key" @click="clearKey()"><i data-lucide="log-out" class="size-4"></i></button>
+        </div>
+      </header>
+
+      <main class="mx-auto max-w-7xl px-5 py-8 lg:px-10">
+        <div class="breadcrumbs mb-3 text-sm text-base-content/60"><ul><li>Reader library</li><li x-text="view === 'dataset' ? 'Dataset' : 'Keys'"></li></ul></div>
+
+        <section x-show="view === 'dataset'" x-cloak>
+          <div class="mb-6 flex flex-wrap items-end justify-between gap-4">
+            <div><h1 class="text-3xl font-semibold tracking-tight">Saved research</h1><p class="mt-1 text-sm text-base-content/60">Browse documents collected by the fetch pipeline.</p></div>
+            <div class="stats stats-horizontal border border-base-300 bg-base-100 shadow-sm"><div class="stat px-5 py-3"><div class="stat-title text-xs">Documents</div><div class="stat-value text-2xl" x-text="pagination.total"></div></div></div>
+          </div>
+          <form @submit.prevent="loadDocuments(1)" class="mb-5 grid gap-3 rounded-box border border-base-300 bg-base-100 p-4 shadow-sm md:grid-cols-4">
+            <label class="form-control md:col-span-2"><div class="label py-1"><span class="label-text text-xs">Title or content</span></div><input class="input input-bordered input-sm" x-model="filters.content" placeholder="Search saved text…" /></label>
+            <label class="form-control"><div class="label py-1"><span class="label-text text-xs">Site name</span></div><input class="input input-bordered input-sm" x-model="filters.sitename" placeholder="e.g. ISO" /></label>
+            <label class="form-control"><div class="label py-1"><span class="label-text text-xs">Tags</span></div><input class="input input-bordered input-sm" x-model="filters.tags" placeholder="e.g. standard" /></label>
+            <div class="flex items-end md:col-span-4"><button class="btn btn-sm btn-neutral" type="submit"><i data-lucide="search" class="size-4"></i>Search</button><button class="btn btn-sm btn-ghost" type="button" @click="resetFilters()">Clear</button></div>
+          </form>
+
+          <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100 shadow-sm">
+            <table class="table table-zebra"><thead><tr><th>Title</th><th>Site</th><th>Published</th><th>Fetched</th><th class="text-right">Actions</th></tr></thead>
+              <tbody><template x-if="loading"><tr><td colspan="5" class="py-12 text-center"><span class="loading loading-spinner loading-md"></span></td></tr></template>
+                <template x-if="!loading && documents.length === 0"><tr><td colspan="5" class="py-12 text-center text-base-content/50">No saved documents found.</td></tr></template>
+                <template x-for="doc in documents" :key="doc.id"><tr class="hover"><td><button class="max-w-[22rem] truncate text-left font-medium hover:underline" @click="openDocument(doc.id)" x-text="truncate(doc.title || '(untitled)')"></button><div class="max-w-[22rem] truncate text-xs text-base-content/50" x-text="doc.url"></div></td><td x-text="doc.site_name || doc.hostname"></td><td class="whitespace-nowrap text-sm" x-text="formatDate(doc.published_at)"></td><td class="whitespace-nowrap text-sm" x-text="formatDate(doc.fetched_at)"></td><td class="text-right"><div class="join"><button class="btn btn-ghost btn-xs join-item" title="Open" @click="openDocument(doc.id)"><i data-lucide="arrow-up-right" class="size-4"></i></button><button class="btn btn-ghost btn-xs join-item text-error" title="Delete" @click="deleteDocument(doc.id)"><i data-lucide="trash-2" class="size-4"></i></button></div></td></tr></template>
+              </tbody>
+            </table>
+            <div class="flex flex-wrap items-center justify-between gap-3 border-t border-base-300 px-4 py-3"><span class="text-xs text-base-content/60" x-text="paginationLabel()"></span><div class="join"><button class="btn btn-sm join-item" :disabled="pagination.page <= 1" @click="loadDocuments(pagination.page - 1)">«</button><button class="btn btn-sm join-item pointer-events-none" x-text="pagination.page"></button><button class="btn btn-sm join-item" :disabled="pagination.page >= pagination.pages" @click="loadDocuments(pagination.page + 1)">»</button></div></div>
+          </div>
+        </section>
+
+        <section x-show="view === 'keys'" x-cloak>
+          <div class="mb-6 flex flex-wrap items-end justify-between gap-4"><div><h1 class="text-3xl font-semibold tracking-tight">API keys</h1><p class="mt-1 text-sm text-base-content/60">Manage access tokens for temporary readers and agents.</p></div><button class="btn btn-neutral" @click="showKeyDialog = true"><i data-lucide="plus" class="size-4"></i>New key</button></div>
+          <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100 shadow-sm"><table class="table"><thead><tr><th>Name</th><th>Key</th><th>Scopes</th><th>Created</th><th>Status</th><th class="text-right">Actions</th></tr></thead><tbody><template x-if="keysLoading"><tr><td colspan="6" class="py-12 text-center"><span class="loading loading-spinner loading-md"></span></td></tr></template><template x-if="!keysLoading && keys.length === 0"><tr><td colspan="6" class="py-12 text-center text-base-content/50">No API keys found.</td></tr></template><template x-for="key in keys" :key="key.id"><tr><td class="font-medium" x-text="key.name"></td><td class="font-mono text-sm" x-text="maskedKey(key)"></td><td><div class="flex flex-wrap gap-1"><template x-for="scope in key.scopes" :key="scope"><span class="badge badge-ghost badge-sm" x-text="scope"></span></template></div></td><td class="text-sm" x-text="formatDate(key.created_at)"></td><td><span class="badge badge-success badge-sm" x-show="!key.revoked_at">active</span><span class="badge badge-error badge-sm" x-show="key.revoked_at">revoked</span></td><td class="text-right"><button class="btn btn-ghost btn-xs" title="Copy token" :disabled="!tokenFor(key.id)" @click="copyToken(key.id)"><i data-lucide="copy" class="size-4"></i></button><button class="btn btn-ghost btn-xs text-error" title="Revoke" :disabled="!!key.revoked_at" @click="revokeKey(key.id)"><i data-lucide="trash-2" class="size-4"></i></button></td></tr></template></tbody></table></div>
+        </section>
+      </main>
+
+      <dialog class="modal" :open="showAuthDialog" x-cloak><div class="modal-box"><h3 class="text-lg font-semibold">Connect to OMA Fetcher</h3><p class="py-3 text-sm text-base-content/60">Enter an API key to access this service. It stays in this browser's local storage.</p><input class="input input-bordered w-full" type="password" x-model="authInput" placeholder="Bearer token" @keydown.enter="saveKey()" /><div class="modal-action"><button class="btn btn-neutral" @click="saveKey()">Continue</button></div></div></dialog>
+      <dialog class="modal" :open="showKeyDialog" x-cloak><div class="modal-box"><h3 class="text-lg font-semibold">Create API key</h3><p class="py-2 text-sm text-base-content/60">The token is shown once. Copy it before closing.</p><input class="input input-bordered w-full" x-model="newKeyName" placeholder="Name, e.g. temporary-reader" @keydown.enter="createKey()" /><div class="modal-action"><button class="btn btn-ghost" @click="showKeyDialog=false">Cancel</button><button class="btn btn-neutral" @click="createKey()" :disabled="!newKeyName.trim()">Create key</button></div><div class="alert alert-success mt-4" x-show="createdToken" x-cloak><span class="break-all font-mono text-xs" x-text="createdToken"></span><button class="btn btn-xs" @click="copyText(createdToken)">Copy</button></div></div></dialog>
+      <dialog class="modal" :open="detailDialog" x-cloak><div class="modal-box max-w-4xl"><div class="flex items-start justify-between"><div><h3 class="text-lg font-semibold" x-text="detail?.title || '(untitled)'"></h3><p class="text-xs text-base-content/50" x-text="detail?.url"></p></div><button class="btn btn-circle btn-ghost btn-sm" @click="detailDialog=false"><i data-lucide="x" class="size-4"></i></button></div><div class="mt-5 grid gap-4 md:grid-cols-3"><div class="md:col-span-2"><div class="label"><span class="label-text text-xs">Content</span></div><pre class="max-h-[55vh] overflow-auto whitespace-pre-wrap rounded-box bg-base-200 p-4 text-sm leading-6" x-text="detail?.content"></pre></div><div><div class="label"><span class="label-text text-xs">Metadata</span></div><pre class="max-h-[55vh] overflow-auto rounded-box bg-base-200 p-4 text-xs" x-text="detail ? JSON.stringify(detail.page || {}, null, 2) : ''"></pre></div></div></div></dialog>
+      <div class="toast toast-end" x-show="toast" x-cloak><div class="alert" :class="toastType === 'error' ? 'alert-error' : 'alert-success'"><span x-text="toast"></span></div></div>
+    </div>
+    <script src="api-client.js"></script><script src="app.js"></script>
+  </body>
+</html>

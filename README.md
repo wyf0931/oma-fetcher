@@ -40,7 +40,8 @@ curl -fsSL https://raw.githubusercontent.com/wyf0931/oma-fetcher/main/scripts/in
 ```
 
 The service is then available at `http://127.0.0.1:7890`, with API docs at
-`/docs`. To inspect the script before running it:
+`/docs`. The optional static Web UI is served at `http://127.0.0.1:8080`.
+To inspect the script before running it:
 
 ```sh
 curl -fsSLO https://raw.githubusercontent.com/wyf0931/oma-fetcher/main/scripts/install-macos.sh
@@ -104,6 +105,10 @@ the primary signal: `200` is healthy/ready and `503` means not ready.
 curl -fsS http://127.0.0.1:7890/livez | jq
 curl -fsS http://127.0.0.1:7890/readyz | jq
 ```
+
+Open `http://127.0.0.1:8080` for the separate Reader library UI. It provides
+Dataset and Keys pages, Bearer-key reuse, table filtering/pagination, document
+details/delete, and key create/copy/revoke.
 
 If port 7890 is already in use, choose another port such as 8003 and use that
 port in the commands below. Interactive OpenAPI documentation is available at

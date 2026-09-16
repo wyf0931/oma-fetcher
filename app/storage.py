@@ -56,6 +56,9 @@ class DocumentStore:
                 jieba.load_userdict(str(self.dictionary_path))
             with self._connect() as connection:
                 connection.executescript(self.schema_path.read_text(encoding="utf-8"))
+                columns = {row[1] for row in connection.execute("PRAGMA table_info(api_keys)")}
+                if "key_suffix" not in columns:
+                    connection.execute("ALTER TABLE api_keys ADD COLUMN key_suffix TEXT")
             self.initialization_error = None
         except Exception as exc:
             self.initialization_error = f"{exc.__class__.__name__}: {str(exc)[:180]}"
@@ -194,6 +197,73 @@ class DocumentStore:
             raise StorageError(f"database search failed: {str(exc)[:180]}") from exc
         return [dict(row) for row in rows]
 
+    def list_documents(
+        self,
+        *,
+        page: int,
+        page_size: int,
+        title: str | None = None,
+        sitename: str | None = None,
+        tags: str | None = None,
+        content: str | None = None,
+    ) -> tuple[list[dict[str, Any]], int]:
+        self._require_available()
+        filters: list[str] = []
+        params: list[Any] = []
+        for column, value in (("d.title", title), ("d.site_name", sitename), ("d.tags_json", tags)):
+            if value:
+                filters.append(f"{column} LIKE ?")
+                params.append(f"%{value}%")
+        if content:
+            filters.append("(d.title LIKE ? OR d.content LIKE ?)")
+            params.extend([f"%{content}%", f"%{content}%"])
+        where = f"WHERE {' AND '.join(filters)}" if filters else ""
+        offset = (page - 1) * page_size
+        try:
+            with self._connect() as connection:
+                total = connection.execute(f"SELECT COUNT(*) FROM documents d {where}", params).fetchone()[0]
+                rows = connection.execute(
+                    f"""
+                    SELECT d.id, d.title, d.url, d.site_name, d.hostname, d.published_at,
+                           d.updated_at, (SELECT MAX(fetched_at) FROM fetches f WHERE f.document_id = d.id) AS fetched_at
+                    FROM documents d {where}
+                    ORDER BY COALESCE(d.published_at, d.updated_at) DESC
+                    LIMIT ? OFFSET ?
+                    """,
+                    [*params, page_size, offset],
+                ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError(f"document listing failed: {str(exc)[:180]}") from exc
+        return [dict(row) for row in rows], int(total)
+
+    def get_document(self, document_id: int) -> dict[str, Any] | None:
+        self._require_available()
+        try:
+            with self._connect() as connection:
+                row = connection.execute("SELECT * FROM documents WHERE id = ?", (document_id,)).fetchone()
+                if not row:
+                    return None
+                result = dict(row)
+                result["tags"] = json.loads(result.pop("tags_json"))
+                result["page"] = json.loads(result.pop("metadata_json"))
+                result.pop("raw_json", None)
+                result["fetches"] = [dict(fetch) for fetch in connection.execute(
+                    "SELECT requested_url, final_url, strategy, status_code, content_type, attempts_json, fetched_at FROM fetches WHERE document_id = ? ORDER BY fetched_at DESC",
+                    (document_id,),
+                ).fetchall()]
+                return result
+        except (sqlite3.Error, ValueError) as exc:
+            raise StorageError(f"document lookup failed: {str(exc)[:180]}") from exc
+
+    def delete_document(self, document_id: int) -> bool:
+        self._require_available()
+        try:
+            with self._connect() as connection:
+                cursor = connection.execute("DELETE FROM documents WHERE id = ?", (document_id,))
+                return cursor.rowcount == 1
+        except sqlite3.Error as exc:
+            raise StorageError(f"document deletion failed: {str(exc)[:180]}") from exc
+
     def create_api_key(self, *, name: str, scopes: list[str], expires_at: str | None, pepper: str) -> tuple[str, dict[str, Any]]:
         self._require_available()
         token = "oma_" + secrets.token_urlsafe(32)
@@ -204,15 +274,15 @@ class DocumentStore:
             with self._connect() as connection:
                 cursor = connection.execute(
                     """
-                    INSERT INTO api_keys (name, key_prefix, secret_hmac, scopes_json, created_at, expires_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO api_keys (name, key_prefix, key_suffix, secret_hmac, scopes_json, created_at, expires_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (name, prefix, digest, self._json(scopes), now, expires_at),
+                    (name, prefix, token[-4:], digest, self._json(scopes), now, expires_at),
                 )
                 key_id = int(cursor.lastrowid)
         except sqlite3.Error as exc:
             raise StorageError(f"api key creation failed: {str(exc)[:180]}") from exc
-        return token, {"id": key_id, "name": name, "key_prefix": prefix, "scopes": scopes, "created_at": now, "expires_at": expires_at}
+        return token, {"id": key_id, "name": name, "key_prefix": prefix, "key_suffix": token[-4:], "scopes": scopes, "created_at": now, "expires_at": expires_at}
 
     def authenticate_key(self, token: str, pepper: str) -> sqlite3.Row | None:
         self._require_available()
@@ -240,7 +310,7 @@ class DocumentStore:
         try:
             with self._connect() as connection:
                 rows = connection.execute(
-                    "SELECT id, name, key_prefix, scopes_json, created_at, expires_at, revoked_at, last_used_at FROM api_keys ORDER BY id DESC"
+                    "SELECT id, name, key_prefix, key_suffix, scopes_json, created_at, expires_at, revoked_at, last_used_at FROM api_keys ORDER BY id DESC"
                 ).fetchall()
         except sqlite3.Error as exc:
             raise StorageError(f"api key listing failed: {str(exc)[:180]}") from exc

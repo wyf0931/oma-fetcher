@@ -27,6 +27,7 @@ class Settings:
     api_admin_key: str = field(default_factory=lambda: os.getenv("API_ADMIN_KEY", "").strip())
     api_key_pepper: str = field(default_factory=lambda: os.getenv("API_KEY_PEPPER", "").strip())
     api_docs_enabled: bool = field(default_factory=lambda: _as_bool("API_DOCS_ENABLED", True))
+    web_cors_origins: tuple[str, ...] = field(default_factory=lambda: tuple(item.strip() for item in os.getenv("WEB_CORS_ORIGINS", "http://localhost:8080,http://127.0.0.1:8080").split(",") if item.strip()))
     proxy_enabled: bool = field(default_factory=lambda: _as_bool("PROXY_ENABLED", False))
     proxy_url: str = field(default_factory=lambda: os.getenv("PROXY_URL", "").strip())
 

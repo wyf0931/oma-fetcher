@@ -79,3 +79,18 @@ def test_successful_route_is_reused_then_expired_on_failure(tmp_path: Path) -> N
     assert store.get_route("www.itu.int", "page").strategy == "scrapling_stealth"
     store.record_route_failure(hostname="itu.int", target_kind="page", strategy="scrapling_stealth")
     assert store.get_route("itu.int", "page") is None
+
+
+def test_document_list_detail_and_delete(tmp_path: Path) -> None:
+    store = make_store(tmp_path)
+    saved = persist_sample(store)
+
+    rows, total = store.list_documents(page=1, page_size=20, content="国家标准")
+    assert total == 1
+    assert rows[0]["id"] == saved.document_id
+    detail = store.get_document(saved.document_id)
+    assert detail is not None
+    assert detail["content"]
+    assert len(detail["fetches"]) == 1
+    assert store.delete_document(saved.document_id)
+    assert store.get_document(saved.document_id) is None

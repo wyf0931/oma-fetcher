@@ -33,6 +33,15 @@ class SearchRequest(BaseModel):
     limit: int = Field(default=20, ge=1, le=100)
 
 
+class DocumentListRequest(BaseModel):
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=20, ge=1, le=100)
+    title: str | None = Field(default=None, max_length=200)
+    sitename: str | None = Field(default=None, max_length=200)
+    tags: str | None = Field(default=None, max_length=200)
+    content: str | None = Field(default=None, max_length=500)
+
+
 class ApiKeyCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     scopes: list[Literal["fetch", "search", "admin"]] = Field(default_factory=lambda: ["fetch"])

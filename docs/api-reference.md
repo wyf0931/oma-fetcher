@@ -81,6 +81,19 @@ Accepts a site URL, page URL, or sitemap URL. `data` is a JSON-encoded array
 of discovered page URLs; use `jq '.data | fromjson'`. `meta` includes sitemap
 documents, count, truncation state, and robots discovery details.
 
+## Document management
+
+The Reader library UI uses these lightweight CRUD endpoints:
+
+```text
+GET    /api/documents?page=1&page_size=20&content=standard
+GET    /api/documents/{id}
+DELETE /api/documents/{id}
+```
+
+The list endpoint supports `title`, `sitename`, `tags`, and `content` filters
+and returns pagination metadata (`page`, `page_size`, `total`, `pages`).
+
 ## Health endpoints
 
 | Endpoint | `200` means | `503` means |
