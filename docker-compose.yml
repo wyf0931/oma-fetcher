@@ -3,7 +3,7 @@ services:
     image: ${FETCHER_IMAGE:-ghcr.io/wyf0931/oma-fetcher:latest}
     pull_policy: always
     ports:
-      - "${FETCHER_PORT:-8000}:8000"
+      - "${FETCHER_PORT:-7890}:7890"
     environment:
       FETCHER_ENFORCE_ROBOTS: "true"
       FETCHER_ALLOW_PRIVATE_NETWORKS: "false"

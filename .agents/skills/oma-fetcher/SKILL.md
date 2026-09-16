@@ -22,15 +22,24 @@ envelope with no data.
 Use the caller-provided service URL when available. Otherwise use:
 
 ```sh
-export OMA_FETCHER_BASE_URL="http://127.0.0.1:8000"
+export OMA_FETCHER_BASE_URL="http://127.0.0.1:7890"
 ```
 
-If port 8000 is occupied, start the project on another port and update the
+If port 7890 is occupied, start the project on another port and update the
 variable:
 
 ```sh
 uv run uvicorn app.main:app --host 127.0.0.1 --port 8003
 export OMA_FETCHER_BASE_URL="http://127.0.0.1:8003"
+```
+
+For a managed background local instance, use `bin/ops.sh`. Its default is 7890
+and it supports `start`, `stop`, and `status` plus `-p PORT`:
+
+```sh
+bin/ops.sh start -p 8003
+export OMA_FETCHER_BASE_URL="http://127.0.0.1:8003"
+bin/ops.sh status -p 8003
 ```
 
 Check health before making a request:
@@ -49,7 +58,7 @@ performs a local Docker build:
 curl -fsSL https://raw.githubusercontent.com/wyf0931/oma-fetcher/main/scripts/install-macos.sh | bash
 ```
 
-The script defaults to `~/oma-fetcher` and port 8000. Explain that macOS
+The script defaults to `~/oma-fetcher` and port 7890. Explain that macOS
 `127.0.0.1` proxies are not automatically reachable from Colima containers;
 use `FETCHER_RUNTIME_PROXY` only with an address reachable from that VM.
 
