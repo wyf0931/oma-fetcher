@@ -157,23 +157,19 @@ curl -sS -X POST 'http://127.0.0.1:7890/api/fetch' \
   | jq '{code, message, strategy: .meta.strategy, final_url: .meta.final_url, attempts: .meta.attempts}'
 ```
 
-Successful fetch responses also contain `meta.page_metadata`, combining raw
-HTML metadata with Trafilatura's semantic interpretation:
+Successful fetch responses also contain Trafilatura's semantic metadata
+directly in `meta.page_metadata`:
 
 ```sh
 curl -sS -X POST 'http://127.0.0.1:7890/api/fetch' \
   -H 'Content-Type: application/json' \
   -d '{"url":"https://www.iso.org/standard/87210.html","timeout_seconds":90}' \
-  | jq '.meta.page_metadata | {
-      html: {title: .html.title, seo: .html.seo, canonical: .html.canonical, open_graph: .html.open_graph},
-      trafilatura: .trafilatura
-    }'
+  | jq '.meta.page_metadata | {title, author, date, description, sitename, categories, tags, image, pagetype, language, url}'
 ```
 
-`html` preserves title, standard SEO meta tags, Open Graph, Twitter Card,
-canonical, hreflang, raw meta tags, and parseable JSON-LD. `trafilatura`
-contains semantic fields such as author, date, sitename, categories, tags,
-language, image, and page type. The extracted Markdown/text remains in `data`.
+Available fields include title, author, description, date, sitename, categories,
+tags, image, page type, language, URL, hostname, fingerprint, ID, and license.
+The extracted Markdown/text remains in `data`.
 
 ### Read robots.txt
 

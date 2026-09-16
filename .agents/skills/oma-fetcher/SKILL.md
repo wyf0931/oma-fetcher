@@ -87,10 +87,10 @@ Set `output_format` to `txt`, `json`, or `xml` when the caller needs a
 Trafilatura format other than Markdown. Do not use `strategy` unless diagnosing
 a particular layer; `auto` is the normal choice.
 
-Every successful fetch also returns `meta.page_metadata`. It combines `html`
-(raw SEO/OG/Twitter/canonical/hreflang/JSON-LD metadata) and `trafilatura`
-(semantic title, author, date, sitename, categories, tags, image, language,
-and page type). Keep content in `data` and inspect metadata separately:
+Every successful fetch returns Trafilatura's semantic metadata directly in
+`meta.page_metadata`: title, author, description, date, sitename, categories,
+tags, image, language, page type, URL, hostname, fingerprint, ID, and license.
+Keep content in `data` and inspect metadata separately:
 
 ```sh
 curl -sS -X POST "$OMA_FETCHER_BASE_URL/api/fetch" \
