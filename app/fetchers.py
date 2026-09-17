@@ -14,7 +14,9 @@ from .safety import safe_redirect_target, validate_public_url
 
 
 class FetchError(RuntimeError):
-    pass
+    def __init__(self, message: str, attempts: list[dict[str, str]] | None = None):
+        super().__init__(message)
+        self.attempts = attempts or []
 
 
 @dataclass
@@ -80,7 +82,7 @@ class EscalatingFetcher:
                 attempts.append({"strategy": name, "reason": f"unusable response (HTTP {result.status_code})"})
             except Exception as exc:  # Libraries use unrelated exception classes.
                 attempts.append({"strategy": name, "reason": self._safe_reason(exc)})
-        raise FetchError("all configured fetch strategies failed: " + "; ".join(a["reason"] for a in attempts))
+        raise FetchError("all configured fetch strategies failed: " + "; ".join(a["reason"] for a in attempts), attempts)
 
     def _safe_reason(self, error: Exception) -> str:
         message = self.config.redact(str(error).replace("\n", " "))
@@ -133,7 +135,9 @@ class EscalatingFetcher:
             if self.config.active_proxy_url:
                 options["proxy"] = self.config.active_proxy_url
             page = StealthyFetcher.fetch(url, **options)
-            return FetchResult(page.html[: self.config.max_response_bytes], str(page.url), int(page.status), "scrapling", page.headers.get("content-type", ""))
+            encoding = getattr(page, "encoding", None) or "utf-8"
+            html = page.body[: self.config.max_response_bytes].decode(encoding, errors="replace")
+            return FetchResult(html, str(page.url), int(page.status), "scrapling", page.headers.get("content-type", ""))
         return await asyncio.to_thread(run)
 
     async def _playwright(self, url: str, timeout: float) -> FetchResult:
