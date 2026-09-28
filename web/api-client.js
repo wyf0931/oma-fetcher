@@ -21,5 +21,5 @@ window.apiClient = (() => {
   }
   const tokenStorageKey = 'oma_fetcher_key_tokens';
   const tokenCache = () => JSON.parse(localStorage.getItem(tokenStorageKey) || '{}');
-  return { request, hasKey: () => !!localStorage.getItem(storageKey), getKey: () => localStorage.getItem(storageKey), setKey: (key) => localStorage.setItem(storageKey, key.trim()), clearKey: () => localStorage.removeItem(storageKey), getToken: (id) => tokenCache()[id] || null, saveToken: (id, token) => { const cache = tokenCache(); cache[id] = token; localStorage.setItem(tokenStorageKey, JSON.stringify(cache)); }, removeToken: (id) => { const cache = tokenCache(); delete cache[id]; localStorage.setItem(tokenStorageKey, JSON.stringify(cache)); }, ApiError };
+  return { request, hasKey: () => !!localStorage.getItem(storageKey), getKey: () => localStorage.getItem(storageKey), setKey: (key) => localStorage.setItem(storageKey, key.trim()), getToken: (id) => tokenCache()[id] || null, saveToken: (id, token) => { const cache = tokenCache(); cache[id] = token; localStorage.setItem(tokenStorageKey, JSON.stringify(cache)); }, removeToken: (id) => { const cache = tokenCache(); delete cache[id]; localStorage.setItem(tokenStorageKey, JSON.stringify(cache)); }, ApiError };
 })();
