@@ -1,10 +1,39 @@
 function app() {
   return {
-    apiClient: window.apiClient, view: 'dataset', documents: [], keys: [], loading: false, keysLoading: false,
+    apiClient: window.apiClient, view: 'playground', documents: [], keys: [], loading: false, keysLoading: false,
     filters: {content: '', sitename: '', tags: ''}, pagination: {page: 1, page_size: 20, total: 0, pages: 0},
     detail: null, detailDialog: false, showAuthDialog: false, authInput: '', showKeyDialog: false, newKeyName: '', tokenCache: {}, toast: '', toastType: 'success',
-    async init() { window.addEventListener('oma-auth-required', () => { this.showAuthDialog = true; }); await this.loadDocuments(1); },
-    navigate(view) { this.view = view; if (view === 'keys') this.loadKeys(); },
+    playgroundMode: 'fetch', playground: {url: '', outputFormat: 'markdown', strategy: 'auto', timeout: 45, persist: false}, playgroundLoading: false, playgroundResponse: null, responseTab: 'body',
+    async init() { window.addEventListener('oma-auth-required', () => { this.showAuthDialog = true; }); },
+    navigate(view) { this.view = view; if (view === 'dataset') this.loadDocuments(1); if (view === 'keys') this.loadKeys(); },
+    get playgroundMethod() { return this.playgroundMode === 'fetch' ? 'POST' : 'GET'; },
+    setPlaygroundMode(mode) { this.playgroundMode = mode; this.playgroundResponse = null; this.responseTab = 'body'; this.$nextTick(() => lucide.createIcons()); },
+    async runPlayground() {
+      if (!this.playground.url || this.playgroundLoading) return;
+      this.playgroundLoading = true;
+      this.playgroundResponse = null;
+      this.responseTab = 'body';
+      const startedAt = performance.now();
+      try {
+        let path;
+        let options = {};
+        if (this.playgroundMode === 'fetch') {
+          path = `/api/fetch${this.playground.persist ? '?persist=true' : ''}`;
+          options = {method: 'POST', body: JSON.stringify({url: this.playground.url, output_format: this.playground.outputFormat, strategy: this.playground.strategy, timeout_seconds: Number(this.playground.timeout) || 45})};
+        } else {
+          path = `/api/${this.playgroundMode}?url=${encodeURIComponent(this.playground.url)}`;
+        }
+        const result = await this.apiClient.request(path, options);
+        this.playgroundResponse = {ok: true, status: result.status, statusText: result.statusText, duration: Math.round(performance.now() - startedAt), data: typeof result.data === 'string' ? result.data : JSON.stringify(result.data, null, 2), meta: result.meta || {}};
+      } catch (error) {
+        const envelope = error.envelope;
+        this.playgroundResponse = {ok: false, status: error.status, statusText: '', duration: Math.round(performance.now() - startedAt), data: envelope ? JSON.stringify({code: envelope.code, message: envelope.message, data: envelope.data ?? null}, null, 2) : (error.message || 'Request failed'), meta: envelope?.meta || {}};
+        if (error.status === 401) this.showAuthDialog = true;
+      } finally {
+        this.playgroundLoading = false;
+        this.$nextTick(() => lucide.createIcons());
+      }
+    },
     async loadDocuments(page = 1) { this.loading = true; try { const query = new URLSearchParams({page, page_size: 20}); Object.entries(this.filters).forEach(([k,v]) => v && query.set(k,v)); const result = await this.apiClient.request(`/api/documents?${query}`); this.documents = result.data || []; this.pagination = result.meta || this.pagination; } catch (error) { this.handleError(error); } finally { this.loading = false; this.$nextTick(() => lucide.createIcons()); } },
     resetFilters() { this.filters = {content: '', sitename: '', tags: ''}; this.loadDocuments(1); },
     async openDocument(id) { try { this.detail = (await this.apiClient.request(`/api/documents/${id}`)).data; this.detailDialog = true; this.$nextTick(() => lucide.createIcons()); } catch (error) { this.handleError(error); } },

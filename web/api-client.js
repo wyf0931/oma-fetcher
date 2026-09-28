@@ -7,13 +7,17 @@ window.apiClient = (() => {
     const token = localStorage.getItem(storageKey);
     if (token) headers.set('Authorization', `Bearer ${token}`);
     if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-    const response = await fetch(`${baseUrl}${path}`, {...options, headers});
+    const startedAt = performance.now();
+    let response;
+    try { response = await fetch(`${baseUrl}${path}`, {...options, headers}); }
+    catch (error) { throw new ApiError(error.message || 'Network request failed', 0, null); }
+    const duration = Math.round(performance.now() - startedAt);
     let envelope; try { envelope = await response.json(); } catch { throw new ApiError(`HTTP ${response.status}`, response.status, null); }
     if (!response.ok || envelope.code !== 0) {
       if (response.status === 401 || envelope.code === 1001) window.dispatchEvent(new Event('oma-auth-required'));
       throw new ApiError(envelope.message || `HTTP ${response.status}`, response.status, envelope);
     }
-    return {data: envelope.data, meta: envelope.meta, headers: response.headers};
+    return {data: envelope.data, meta: envelope.meta, headers: response.headers, status: response.status, statusText: response.statusText, duration};
   }
   const tokenStorageKey = 'oma_fetcher_key_tokens';
   const tokenCache = () => JSON.parse(localStorage.getItem(tokenStorageKey) || '{}');
