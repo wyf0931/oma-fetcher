@@ -44,10 +44,16 @@ fetcher = EscalatingFetcher(settings)
 store = DocumentStore(settings.storage_path, settings.storage_user_dict_path)
 
 
-def proxy_settings_view() -> dict[str, Any]:
-    parsed = urlsplit(settings.proxy_url) if settings.proxy_url else None
+def proxy_settings_view(source: str = "active") -> dict[str, Any]:
+    if source == "environment":
+        enabled = settings.proxy_environment_enabled
+        proxy_url = settings.proxy_environment_url
+    else:
+        enabled = settings.proxy_enabled
+        proxy_url = settings.proxy_url
+    parsed = urlsplit(proxy_url) if proxy_url else None
     return {
-        "enabled": settings.proxy_enabled,
+        "enabled": enabled,
         "scheme": parsed.scheme if parsed else "http",
         "server": parsed.hostname or "" if parsed else "",
         "port": parsed.port if parsed else None,
@@ -58,11 +64,11 @@ def proxy_settings_view() -> dict[str, Any]:
 
 
 @app.get("/api/settings/proxy", response_model=ApiEnvelope)
-async def get_proxy_settings(request: Request):
+async def get_proxy_settings(request: Request, source: str = Query(default="active", pattern="^(active|environment)$")):
     denied = require_admin(request)
     if denied:
         return denied
-    return envelope(0, "ok", proxy_settings_view())
+    return envelope(0, "ok", proxy_settings_view(source))
 
 
 @app.put("/api/settings/proxy", response_model=ApiEnvelope)

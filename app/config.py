@@ -32,8 +32,12 @@ class Settings:
     proxy_enabled: bool = field(default_factory=lambda: _as_bool("PROXY_ENABLED", False))
     proxy_url: str = field(default_factory=lambda: os.getenv("PROXY_URL", "").strip())
     proxy_override: bool = False
+    proxy_environment_enabled: bool = field(init=False)
+    proxy_environment_url: str = field(init=False)
 
     def __post_init__(self) -> None:
+        self.proxy_environment_enabled = self.proxy_enabled
+        self.proxy_environment_url = self.proxy_url
         if self.proxy_enabled and not self.proxy_url:
             raise ValueError("PROXY_URL must be set when PROXY_ENABLED=on")
         if self.proxy_url and urlsplit(self.proxy_url).scheme not in {"http", "https", "socks5", "socks5h"}:
@@ -78,6 +82,8 @@ class Settings:
     def apply_proxy_override(self, value: dict | None) -> None:
         self.proxy_override = value is not None
         if value is None:
+            self.proxy_enabled = self.proxy_environment_enabled
+            self.proxy_url = self.proxy_environment_url
             return
         self.proxy_enabled = bool(value.get("enabled"))
         self.proxy_url = str(value.get("url") or "")
