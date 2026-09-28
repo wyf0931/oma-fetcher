@@ -5,7 +5,7 @@ import urllib.robotparser
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import quote, unquote, urlsplit
 
 import trafilatura
 import httpx
@@ -20,7 +20,7 @@ from .config import settings
 from .discovery import DiscoveryError, DiscoveryFetchError, origin_for, robots, sitemap
 from .fetchers import EscalatingFetcher, FetchError
 from .metadata import extract_page_metadata
-from .models import ApiEnvelope, ApiKeyCreateRequest, DocumentListRequest, FetchRequest, SearchRequest
+from .models import ApiEnvelope, ApiKeyCreateRequest, DocumentListRequest, FetchRequest, ProxySettingsRequest, SearchRequest
 from .quality import ContentAssessment, assess_page_content
 from .safety import UnsafeUrlError
 from .storage import DocumentStore, StorageError
@@ -33,6 +33,8 @@ def envelope(code: int, message: str, data: Any = None, meta: dict | None = None
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     store.initialize()
+    if store.available:
+        settings.apply_proxy_override(await asyncio.to_thread(store.get_app_setting, "proxy"))
     yield
 
 
@@ -40,6 +42,81 @@ app = FastAPI(title="OMA Fetcher", version="0.1.0", lifespan=lifespan, docs_url=
 app.add_middleware(CORSMiddleware, allow_origins=list(settings.web_cors_origins), allow_credentials=False, allow_methods=["GET", "POST", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type", "Prefer"])
 fetcher = EscalatingFetcher(settings)
 store = DocumentStore(settings.storage_path, settings.storage_user_dict_path)
+
+
+def proxy_settings_view() -> dict[str, Any]:
+    parsed = urlsplit(settings.proxy_url) if settings.proxy_url else None
+    return {
+        "enabled": settings.proxy_enabled,
+        "scheme": parsed.scheme if parsed else "http",
+        "server": parsed.hostname or "" if parsed else "",
+        "port": parsed.port if parsed else None,
+        "username_configured": bool(parsed and parsed.username),
+        "password_configured": bool(parsed and parsed.password),
+        "source": "override" if settings.proxy_override else "environment",
+    }
+
+
+@app.get("/api/settings/proxy", response_model=ApiEnvelope)
+async def get_proxy_settings(request: Request):
+    denied = require_admin(request)
+    if denied:
+        return denied
+    return envelope(0, "ok", proxy_settings_view())
+
+
+@app.put("/api/settings/proxy", response_model=ApiEnvelope)
+async def update_proxy_settings(request: Request, payload: ProxySettingsRequest):
+    denied = require_admin(request)
+    if denied:
+        return denied
+    if not payload.enabled:
+        value = {"enabled": False, "url": ""}
+    else:
+        if not payload.server or payload.port is None:
+            return envelope(1002, "proxy server and port are required", status_code=422)
+        old = urlsplit(settings.proxy_url) if settings.proxy_url else None
+        username = payload.username
+        password = payload.password
+        if not payload.clear_credentials and old:
+            username = username if username is not None else unquote(old.username or "")
+            password = password if password is not None else unquote(old.password or "")
+        credentials = ""
+        if username:
+            credentials = quote(username, safe="")
+            if password:
+                credentials += f":{quote(password, safe='')}"
+            credentials += "@"
+        server = payload.server
+        authority = f"[{server}]" if ":" in server and not server.startswith("[") else server
+        proxy_url = f"{payload.scheme}://{credentials}{authority}:{payload.port}"
+        try:
+            parsed = urlsplit(proxy_url)
+            valid_address = bool(parsed.hostname) and parsed.port == payload.port
+        except ValueError:
+            valid_address = False
+        if not valid_address:
+            return envelope(1002, "invalid proxy server or port", status_code=422)
+        value = {"enabled": True, "url": proxy_url}
+    try:
+        await asyncio.to_thread(store.set_app_setting, "proxy", value)
+    except StorageError as exc:
+        return envelope(4004, str(exc), status_code=503)
+    settings.apply_proxy_override(value)
+    return envelope(0, "ok", proxy_settings_view())
+
+
+@app.delete("/api/settings/proxy", response_model=ApiEnvelope)
+async def reset_proxy_settings(request: Request):
+    denied = require_admin(request)
+    if denied:
+        return denied
+    try:
+        await asyncio.to_thread(store.delete_app_setting, "proxy")
+    except StorageError as exc:
+        return envelope(4004, str(exc), status_code=503)
+    settings.apply_proxy_override(None)
+    return envelope(0, "ok", proxy_settings_view())
 
 
 @app.middleware("http")

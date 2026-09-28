@@ -71,6 +71,12 @@ CREATE TABLE IF NOT EXISTS fetch_routes (
 
 CREATE INDEX IF NOT EXISTS idx_fetch_routes_expires_at ON fetch_routes(expires_at);
 
+CREATE TABLE IF NOT EXISTS app_settings (
+    name        TEXT PRIMARY KEY,
+    value_json  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS document_search (
     document_id          INTEGER PRIMARY KEY,
     title_tokens         TEXT NOT NULL,

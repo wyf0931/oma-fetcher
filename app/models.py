@@ -50,3 +50,13 @@ class ApiKeyCreateRequest(BaseModel):
 
 class ApiKeyRevokeRequest(BaseModel):
     key_id: int = Field(gt=0)
+
+
+class ProxySettingsRequest(BaseModel):
+    enabled: bool = True
+    scheme: Literal["http", "https", "socks5", "socks5h"] = "http"
+    server: str = Field(default="", max_length=253, pattern=r"^[A-Za-z0-9.\-:\[\]]*$")
+    port: int | None = Field(default=None, ge=1, le=65535)
+    username: str | None = Field(default=None, max_length=255)
+    password: str | None = Field(default=None, max_length=1024)
+    clear_credentials: bool = False

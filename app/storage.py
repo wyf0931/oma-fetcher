@@ -63,6 +63,26 @@ class DocumentStore:
         except Exception as exc:
             self.initialization_error = f"{exc.__class__.__name__}: {str(exc)[:180]}"
 
+    def get_app_setting(self, name: str) -> dict[str, Any] | None:
+        self._require_available()
+        with self._connect() as connection:
+            row = connection.execute("SELECT value_json FROM app_settings WHERE name = ?", (name,)).fetchone()
+        return json.loads(row["value_json"]) if row else None
+
+    def set_app_setting(self, name: str, value: dict[str, Any]) -> None:
+        self._require_available()
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO app_settings (name, value_json, updated_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(name) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at",
+                (name, self._json(value), datetime.now(UTC).isoformat()),
+            )
+
+    def delete_app_setting(self, name: str) -> None:
+        self._require_available()
+        with self._connect() as connection:
+            connection.execute("DELETE FROM app_settings WHERE name = ?", (name,))
+
     def persist(
         self,
         *,

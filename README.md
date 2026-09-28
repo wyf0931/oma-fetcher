@@ -153,6 +153,16 @@ cp .env.example .env
 PROXY_ENABLED=off
 ```
 
+The local `bin/ops.sh` launcher also loads these values from `.env`, so the
+Web UI and Docker Compose share the same environment baseline. Open the
+settings icon in the Web UI to save a proxy override without restarting the
+service. Overrides are stored in the SQLite database and take effect for page,
+robots, and sitemap requests immediately. **Clear proxy** saves an explicit
+direct-connection override; **Use environment** removes the override and
+restores the `.env` baseline. With API authentication enabled, these settings
+are available only to the environment administrator key. Proxy credentials
+are never returned by the settings API.
+
 To force **every fetch strategy** through an authenticated proxy, set:
 
 ```sh
