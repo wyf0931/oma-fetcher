@@ -247,7 +247,7 @@ class DocumentStore:
                     SELECT d.id, d.title, d.url, d.site_name, d.hostname, d.published_at,
                            d.updated_at, (SELECT MAX(fetched_at) FROM fetches f WHERE f.document_id = d.id) AS fetched_at
                     FROM documents d {where}
-                    ORDER BY COALESCE(d.published_at, d.updated_at) DESC
+                    ORDER BY fetched_at DESC, d.id DESC
                     LIMIT ? OFFSET ?
                     """,
                     [*params, page_size, offset],
