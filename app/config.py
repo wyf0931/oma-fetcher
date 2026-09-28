@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from urllib.parse import unquote, urlsplit, urlunsplit
 
@@ -9,7 +10,7 @@ def _as_bool(name: str, default: bool) -> bool:
     return os.getenv(name, str(default)).strip().lower() in {"1", "true", "yes", "on"}
 
 
-@dataclass(frozen=True)
+@dataclass
 class Settings:
     allow_private_networks: bool = _as_bool("FETCHER_ALLOW_PRIVATE_NETWORKS", False)
     enforce_robots: bool = _as_bool("FETCHER_ENFORCE_ROBOTS", True)
@@ -30,6 +31,7 @@ class Settings:
     web_cors_origins: tuple[str, ...] = field(default_factory=lambda: tuple(item.strip() for item in os.getenv("WEB_CORS_ORIGINS", "http://localhost:8080,http://127.0.0.1:8080").split(",") if item.strip()))
     proxy_enabled: bool = field(default_factory=lambda: _as_bool("PROXY_ENABLED", False))
     proxy_url: str = field(default_factory=lambda: os.getenv("PROXY_URL", "").strip())
+    proxy_override: bool = False
 
     def __post_init__(self) -> None:
         if self.proxy_enabled and not self.proxy_url:
@@ -70,8 +72,15 @@ class Settings:
 
     def redact(self, value: str) -> str:
         if self.proxy_url:
-            return value.replace(self.proxy_url, self.proxy_label or "[proxy]")
-        return value
+            value = value.replace(self.proxy_url, self.proxy_label or "[proxy]")
+        return re.sub(r"(?i)(https?|socks5h?)://[^\s/@:]+(?::[^\s/@]*)?@", r"\1://[redacted]@", value)
+
+    def apply_proxy_override(self, value: dict | None) -> None:
+        self.proxy_override = value is not None
+        if value is None:
+            return
+        self.proxy_enabled = bool(value.get("enabled"))
+        self.proxy_url = str(value.get("url") or "")
 
 
 settings = Settings()

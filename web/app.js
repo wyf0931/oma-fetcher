@@ -3,6 +3,7 @@ function app() {
     apiClient: window.apiClient, view: 'playground', documents: [], keys: [], loading: false, keysLoading: false,
     filters: {content: '', sitename: '', tags: ''}, pagination: {page: 1, page_size: 20, total: 0, pages: 0},
     detail: null, detailDialog: false, detailTab: 'body', showAuthDialog: false, authInput: '', showKeyDialog: false, newKeyName: '', tokenCache: {}, toast: '', toastType: 'success',
+    proxyDialog: false, proxyLoading: false, proxySaving: false, proxy: {enabled: false, scheme: 'http', server: '', port: '', username: '', password: '', clearCredentials: false, source: 'environment', usernameConfigured: false, passwordConfigured: false},
     playgroundMode: 'fetch', playground: {url: '', outputFormat: 'markdown', strategy: 'auto', timeout: 45, persist: false}, playgroundLoading: false, playgroundResponse: null, responseTab: 'body',
     init() { window.addEventListener('oma-auth-required', () => { this.showAuthDialog = true; }); window.addEventListener('load', () => lucide.createIcons(), {once: true}); },
     navigate(view) { this.view = view; if (view === 'dataset') this.loadDocuments(1); if (view === 'keys') this.loadKeys(); },
@@ -40,6 +41,38 @@ function app() {
     async loadKeys() { this.keysLoading = true; try { this.keys = (await this.apiClient.request('/api/keys')).data || []; } catch (error) { this.handleError(error); } finally { this.keysLoading = false; this.$nextTick(() => lucide.createIcons()); } },
     async createKey() { try { const result = await this.apiClient.request('/api/keys', {method: 'POST', body: JSON.stringify({name: this.newKeyName.trim(), scopes: ['fetch', 'search']})}); this.apiClient.saveToken(result.data.id, result.data.token); this.newKeyName = ''; this.showKeyDialog = false; await this.loadKeys(); this.notify('API key created; use Copy in the table'); } catch (error) { this.handleError(error); } },
     async revokeKey(id) { if (!window.confirm('Delete this API key permanently?')) return; try { await this.apiClient.request(`/api/keys/${id}`, {method: 'DELETE'}); this.apiClient.removeToken(id); this.notify('API key deleted'); await this.loadKeys(); } catch (error) { this.handleError(error); } },
+    async openProxySettings() {
+      this.proxyDialog = true; this.proxyLoading = true;
+      try {
+        const result = await this.apiClient.request('/api/settings/proxy');
+        const value = result.data || {};
+        this.proxy = {...this.proxy, ...value, port: value.port || '', username: '', password: '', clearCredentials: false, usernameConfigured: value.username_configured, passwordConfigured: value.password_configured};
+      } catch (error) { this.proxyDialog = false; this.handleError(error); }
+      finally { this.proxyLoading = false; this.$nextTick(() => lucide.createIcons()); }
+    },
+    async saveProxySettings() {
+      if (this.proxySaving) return;
+      this.proxySaving = true;
+      try {
+        const payload = {enabled: this.proxy.enabled, scheme: this.proxy.scheme, server: this.proxy.server.trim(), port: this.proxy.port ? Number(this.proxy.port) : null, clear_credentials: this.proxy.clearCredentials};
+        if (this.proxy.username) payload.username = this.proxy.username;
+        if (this.proxy.password) payload.password = this.proxy.password;
+        const result = await this.apiClient.request('/api/settings/proxy', {method: 'PUT', body: JSON.stringify(payload)});
+        this.proxy = {...this.proxy, ...result.data, port: result.data.port || '', username: '', password: '', clearCredentials: false, usernameConfigured: result.data.username_configured, passwordConfigured: result.data.password_configured};
+        this.notify('Proxy settings saved and applied');
+      } catch (error) { this.handleError(error); }
+      finally { this.proxySaving = false; }
+    },
+    async clearProxySettings() {
+      this.proxy.enabled = false;
+      await this.saveProxySettings();
+    },
+    async useEnvironmentProxy() {
+      this.proxySaving = true;
+      try { const result = await this.apiClient.request('/api/settings/proxy', {method: 'DELETE'}); this.proxy = {...this.proxy, ...result.data, port: result.data.port || '', username: '', password: '', usernameConfigured: result.data.username_configured, passwordConfigured: result.data.password_configured}; this.notify('Using environment proxy settings'); }
+      catch (error) { this.handleError(error); }
+      finally { this.proxySaving = false; }
+    },
     tokenFor(id) { return this.apiClient.getToken(id); },
     maskedKey(key) { return key?.key_prefix ? `${key.key_prefix.slice(0, 4)}***${(key.key_suffix || key.key_prefix.slice(-4))}` : '••••••••'; },
     async copyToken(id) { const token = this.tokenFor(id); if (token) await this.copyText(token); },

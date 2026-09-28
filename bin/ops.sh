@@ -58,6 +58,18 @@ start() {
   info "Starting OMA Fetcher API + Web UI on http://127.0.0.1:$PORT"
   (
     cd "$ROOT_DIR"
+    if [[ -f .env ]]; then
+      proxy_enabled_was_set="${PROXY_ENABLED+x}"
+      proxy_enabled_from_env="${PROXY_ENABLED-}"
+      proxy_url_was_set="${PROXY_URL+x}"
+      proxy_url_from_env="${PROXY_URL-}"
+      set -a
+      # shellcheck disable=SC1091
+      source .env
+      set +a
+      if [[ -n "$proxy_enabled_was_set" ]]; then PROXY_ENABLED="$proxy_enabled_from_env"; export PROXY_ENABLED; fi
+      if [[ -n "$proxy_url_was_set" ]]; then PROXY_URL="$proxy_url_from_env"; export PROXY_URL; fi
+    fi
     nohup uv run uvicorn app.main:app --host 127.0.0.1 --port "$PORT" >>"$LOG_FILE" 2>&1 &
     echo $! >"$PID_FILE"
   )
