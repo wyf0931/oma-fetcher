@@ -24,6 +24,10 @@ document store per request. It returns an envelope for every outcome:
 `code: 0` means success. On an error, `data` is `null` and `message` plus
 `meta.attempts` explain the failure.
 
+**Agent quickstart:** install `.agents/skills/oma-fetcher/` into your agent's
+skills directory, then use that skill to call this platform's fetch, robots,
+and sitemap APIs at `http://127.0.0.1:7890`.
+
 ## Quickstart
 
 This project uses [uv](https://docs.astral.sh/uv/) for Python dependencies.
@@ -207,7 +211,7 @@ Markdown is the default. Supported `output_format` values are `markdown`,
 `txt`, `json`, and `xml`.
 
 ```sh
-curl -sS --fail-with-body -X POST 'http://127.0.0.1:7890/api/fetch' \
+curl -sS --connect-timeout 5 --max-time 100 --fail-with-body -X POST 'http://127.0.0.1:7890/api/fetch?persist=true' \
   -H 'Content-Type: application/json' \
   -d '{
     "url": "https://www.iso.org/standard/87210.html",

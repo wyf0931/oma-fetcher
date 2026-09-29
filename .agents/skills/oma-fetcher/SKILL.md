@@ -17,6 +17,12 @@ consistent JSON envelope:
 `jq -r '.data'` as successful output; it means the API returned an error
 envelope with no data.
 
+For page fetches, request persistence by default with `?persist=true` so the
+page is saved to the local library. Use `?persist=false` only when the caller
+asks for a one-off fetch. The service itself may be configured with persistence
+off, so make the request explicit and check `meta.storage.saved` and
+`meta.storage.document_id` in the response.
+
 ## Establish the service URL
 
 Use the caller-provided service URL when available. Otherwise use:
@@ -46,7 +52,7 @@ bin/ops.sh status -p 8003
 Check health before making a request:
 
 ```sh
-curl -sS --fail-with-body "$OMA_FETCHER_BASE_URL/healthz" | jq
+curl -sS --connect-timeout 5 --max-time 10 --fail-with-body "$OMA_FETCHER_BASE_URL/readyz" | jq
 ```
 
 For a non-local deployment with `API_AUTH_ENABLED=on`, send
@@ -77,16 +83,16 @@ Markdown is the default output. Always inspect the response envelope before
 printing a large body or reporting success.
 
 ```sh
-curl -sS --fail-with-body -X POST "$OMA_FETCHER_BASE_URL/api/fetch" \
+curl -sS --connect-timeout 5 --max-time 100 --fail-with-body -X POST "$OMA_FETCHER_BASE_URL/api/fetch?persist=true" \
   -H 'Content-Type: application/json' \
   -d '{"url":"https://example.com/article","output_format":"markdown","timeout_seconds":90}' \
-  | jq '{code, message, strategy: .meta.strategy, attempts: .meta.attempts}'
+  | jq '{code, message, strategy: .meta.strategy, attempts: .meta.attempts, storage: .meta.storage}'
 ```
 
 To print extracted Markdown only after confirming success:
 
 ```sh
-curl -sS --fail-with-body -X POST "$OMA_FETCHER_BASE_URL/api/fetch" \
+curl -sS --connect-timeout 5 --max-time 100 --fail-with-body -X POST "$OMA_FETCHER_BASE_URL/api/fetch?persist=true" \
   -H 'Content-Type: application/json' \
   -d '{"url":"https://example.com/article","output_format":"markdown","timeout_seconds":90}' \
   | jq -e 'if .code == 0 then .data else error(.message) end'
@@ -96,13 +102,19 @@ Set `output_format` to `txt`, `json`, or `xml` when the caller needs a
 Trafilatura format other than Markdown. Do not use `strategy` unless diagnosing
 a particular layer; `auto` is the normal choice.
 
+`timeout_seconds` accepts 3–180 seconds; use 90 seconds for normal page
+extraction and set curl's `--max-time` slightly higher to allow the server to
+finish its fallback chain. The service already performs bounded retries. Avoid
+automatically retrying a timed-out POST because the first request may have
+completed and saved the page even if the client did not receive its response.
+
 Every successful fetch returns Trafilatura's semantic metadata directly in
 `meta.page`: title, author, description, date, sitename, categories,
 tags, image, language, page type, URL, hostname, fingerprint, ID, and license.
 Keep content in `data` and inspect metadata separately:
 
 ```sh
-curl -sS -X POST "$OMA_FETCHER_BASE_URL/api/fetch" \
+curl -sS --connect-timeout 5 --max-time 100 -X POST "$OMA_FETCHER_BASE_URL/api/fetch?persist=true" \
   -H 'Content-Type: application/json' \
   -d '{"url":"https://example.com/article","timeout_seconds":90}' \
   | jq '.meta.page'
@@ -110,9 +122,11 @@ curl -sS -X POST "$OMA_FETCHER_BASE_URL/api/fetch" \
 
 ## Persist and search documents
 
-Fetches are not stored by default. Add `?persist=true` to persist a document,
-its jieba search projection, and fetch history. The response reports
-`meta.storage.document_id` and `meta.storage.deduplicated`.
+This skill requests saved pages by default using `?persist=true`. The service
+itself defaults to no persistence unless `STORAGE_SAVE_DEFAULT=on`; the explicit
+query parameter ensures this agent workflow saves the document, jieba search
+projection, and fetch history. The response reports `meta.storage.document_id`
+and `meta.storage.deduplicated`.
 
 ```sh
 curl -sS -X POST "$OMA_FETCHER_BASE_URL/api/fetch?persist=true" \
@@ -137,7 +151,7 @@ curl -sS -X POST "$OMA_FETCHER_BASE_URL/api/search" \
 ## Read robots.txt
 
 ```sh
-curl -sS --fail-with-body --get "$OMA_FETCHER_BASE_URL/api/robots" \
+curl -sS --connect-timeout 5 --max-time 100 --fail-with-body --get "$OMA_FETCHER_BASE_URL/api/robots" \
   --data-urlencode 'url=https://www.iso.org/' \
   | jq -e 'if .code == 0 then .data else error(.message) end'
 ```
@@ -156,7 +170,7 @@ Pass a domain, normal page URL, or direct sitemap URL. The `data` field is a
 JSON-encoded string, so decode it with `fromjson` before iterating.
 
 ```sh
-curl -sS --fail-with-body --get "$OMA_FETCHER_BASE_URL/api/sitemap" \
+curl -sS --connect-timeout 5 --max-time 100 --fail-with-body --get "$OMA_FETCHER_BASE_URL/api/sitemap" \
   --data-urlencode 'url=https://www.iso.org/sitemap/standard.xml' \
   | jq -e 'if .code == 0 then .data | fromjson[:20][] else error(.message) end'
 ```
