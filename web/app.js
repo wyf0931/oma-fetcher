@@ -97,6 +97,12 @@ function app() {
     maskedKey(key) { return key?.key_prefix ? `${key.key_prefix.slice(0, 4)}***${(key.key_suffix || key.key_prefix.slice(-4))}` : '••••••••'; },
     async copyToken(id) { const token = this.tokenFor(id); if (token) await this.copyText(token); },
     async copyText(text) { try { await navigator.clipboard.writeText(text); this.notify('Copied to clipboard'); } catch { this.notify('Clipboard unavailable; copy the text manually', 'error'); } },
+    formatJson(value) { return JSON.stringify(value ?? {}, null, 2) ?? 'null'; },
+    highlightJson(value) {
+      const source = this.formatJson(value);
+      if (window.Prism?.languages?.json) return window.Prism.highlight(source, window.Prism.languages.json, 'json');
+      return source.replace(/[&<>"']/g, character => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[character]));
+    },
     async copyPlaygroundBlock() { const content = this.responseTab === 'body' ? this.playgroundResponse?.data || '(empty response body)' : JSON.stringify(this.playgroundResponse?.meta || {}, null, 2); if (content) await this.copyText(content); },
     async copyDetailBlock() { const content = this.detailTab === 'body' ? this.detail?.content : JSON.stringify(this.detail?.page || {}, null, 2); if (content) await this.copyText(content); },
     saveKey() { if (!this.authInput.trim()) return; this.apiClient.setKey(this.authInput); this.authInput = ''; this.showAuthDialog = false; this.notify('API key saved'); this.loadDocuments(1); },
