@@ -2,9 +2,11 @@
 # Manage the local FastAPI process, which serves both API and web/ static assets.
 set -euo pipefail
 
-readonly ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly ROOT_DIR
 readonly RUNTIME_DIR="${TMPDIR:-/tmp}/oma-fetcher"
 PORT=7890
+COMMAND=""
 
 usage() {
   cat <<'EOF'
@@ -25,18 +27,26 @@ EOF
 die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
 info() { printf '%s\n' "$*"; }
 
-while getopts ':p:h' option; do
-  case "$option" in
-    p) PORT="$OPTARG" ;;
-    h) usage; exit 0 ;;
-    :) die "Option -$OPTARG needs a value." ;;
-    \?) die "Unknown option: -$OPTARG" ;;
+while (($#)); do
+  case "$1" in
+    -p)
+      (( $# >= 2 )) || die "Option -p needs a value."
+      PORT="$2"
+      shift 2
+      ;;
+    -p*) PORT="${1#-p}"; shift ;;
+    -h) usage; exit 0 ;;
+    -*) die "Unknown option: $1" ;;
+    *)
+      [[ -z "$COMMAND" ]] || die "Unknown command: $1"
+      COMMAND="$1"
+      shift
+      ;;
   esac
 done
-shift $((OPTIND - 1))
 
-COMMAND="${1:-}"
-[[ "$PORT" =~ ^[0-9]+$ ]] && (( PORT >= 1 && PORT <= 65535 )) || die "Port must be between 1 and 65535."
+[[ "$PORT" =~ ^[0-9]+$ ]] || die "Port must be a number."
+(( PORT >= 1 && PORT <= 65535 )) || die "Port must be between 1 and 65535."
 [[ -n "$COMMAND" ]] || { usage; exit 1; }
 
 PID_FILE="$RUNTIME_DIR/uvicorn-$PORT.pid"
@@ -74,7 +84,7 @@ start() {
     echo $! >"$PID_FILE"
   )
   for _ in {1..30}; do
-    if curl -fsS "http://127.0.0.1:$PORT/readyz" >/dev/null 2>&1; then
+    if curl -fsS --noproxy '*' --max-time 5 "http://127.0.0.1:$PORT/readyz" >/dev/null 2>&1; then
       info "Ready (PID $(read_pid)). UI: http://127.0.0.1:$PORT/ Logs: $LOG_FILE"
       return
     fi
@@ -116,7 +126,7 @@ status() {
   fi
   local pid
   pid="$(read_pid)"
-  if curl -fsS "http://127.0.0.1:$PORT/readyz" >/dev/null 2>&1; then
+  if curl -fsS --noproxy '*' --max-time 5 "http://127.0.0.1:$PORT/readyz" >/dev/null 2>&1; then
     info "OMA Fetcher is healthy on http://127.0.0.1:$PORT (PID $pid)."
   else
     info "OMA Fetcher process is running but readiness is failing (PID $pid). Logs: $LOG_FILE"
