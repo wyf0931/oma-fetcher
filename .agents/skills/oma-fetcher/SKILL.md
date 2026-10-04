@@ -1,6 +1,6 @@
 ---
 name: oma-fetcher
-description: Use the OMA Fetcher FastAPI service to retrieve a single URL as clean Markdown, text, JSON, or XML; inspect robots.txt; discover sitemap URLs; and diagnose fetch escalation. Use this skill whenever a user asks to fetch/read/extract a web page through this project, inspect robots.txt, list sitemap URLs, test `/api/fetch`, `/api/robots`, or `/api/sitemap`, or investigate `data: null` / 403 / WAF fallback behavior.
+description: "Use the OMA Fetcher FastAPI service to retrieve a single URL as clean Markdown, text, JSON, or XML; inspect robots.txt; discover sitemap URLs; and diagnose fetch escalation. Use this skill whenever a user asks to fetch/read/extract a web page through this project, inspect robots.txt, list sitemap URLs, test `/api/fetch`, `/api/robots`, or `/api/sitemap`, or investigate `data: null` / 403 / WAF fallback behavior."
 compatibility: Requires curl, jq, and a running OMA Fetcher service.
 ---
 
