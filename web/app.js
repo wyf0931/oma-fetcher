@@ -111,5 +111,12 @@ function app() {
     truncate(value) { return value.length > 20 ? `${value.slice(0, 20)}…` : value; },
     formatDate(value) { if (!value) return '—'; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleString(); },
     paginationLabel() { const start = this.pagination.total ? (this.pagination.page - 1) * this.pagination.page_size + 1 : 0; const end = Math.min(this.pagination.page * this.pagination.page_size, this.pagination.total); return `${start}–${end} of ${this.pagination.total}`; },
+    paginationPages() {
+      const pages = Math.max(0, Number(this.pagination.pages) || 0);
+      const current = Math.min(Math.max(1, Number(this.pagination.page) || 1), pages || 1);
+      if (pages <= 5) return Array.from({length: pages}, (_, index) => index + 1);
+      const start = Math.min(Math.max(1, current - 2), pages - 4);
+      return Array.from({length: 5}, (_, index) => start + index);
+    },
   };
 }
