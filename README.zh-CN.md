@@ -32,6 +32,18 @@ OMA Fetcher 是一个面向单个 URL 的 **网页阅读与发现 API**。它可
 - **本地阅读器 UI** —— 浏览文档库、管理 API Key。
 - **单容器部署** —— 已发布到 GHCR，内置 Chromium 与全部抓取策略。
 
+## 界面截图
+
+| Playground | Results |
+| :---: | :---: |
+| [![Playground](docs/assets/screenshots/playground.png)](docs/assets/screenshots/playground.png) | [![Results](docs/assets/screenshots/results.png)](docs/assets/screenshots/results.png) |
+| 运行 fetch、robots 和 sitemap 请求，并查看完整响应。 | 浏览、筛选并打开已保存文档。 |
+| **代理设置** | **API Keys** |
+| [![代理设置](docs/assets/screenshots/proxy-settings.png)](docs/assets/screenshots/proxy-settings.png) | [![API Keys](docs/assets/screenshots/keys.png)](docs/assets/screenshots/keys.png) |
+| 无需重启服务即可覆盖出站代理。 | 创建、复制和撤销带作用域的客户端 Key。 |
+
+截图使用本地演示数据。
+
 ## 工作原理
 
 ```text

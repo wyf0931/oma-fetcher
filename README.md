@@ -32,6 +32,18 @@ browser automation framework in every caller.
 - **Single container** — published to GHCR with Chromium and all fetch
   strategies included.
 
+## Screenshots
+
+| Playground | Results |
+| :---: | :---: |
+| [![Playground](docs/assets/screenshots/playground.png)](docs/assets/screenshots/playground.png) | [![Results](docs/assets/screenshots/results.png)](docs/assets/screenshots/results.png) |
+| Run fetch, robots, and sitemap requests and inspect the full response. | Browse, filter, and open saved documents. |
+| **Proxy settings** | **API keys** |
+| [![Proxy settings](docs/assets/screenshots/proxy-settings.png)](docs/assets/screenshots/proxy-settings.png) | [![API keys](docs/assets/screenshots/keys.png)](docs/assets/screenshots/keys.png) |
+| Override the outbound proxy without restarting the service. | Create, copy, and revoke scoped client keys. |
+
+Screenshots use local demo data.
+
 ## How it works
 
 ```text
