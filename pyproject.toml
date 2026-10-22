@@ -1,6 +1,6 @@
 [project]
 name = "oma-fetcher"
-version = "0.1.0"
+version = "1.5.0"
 requires-python = ">=3.12"
 dependencies = [
     "beautifulsoup4>=4.12,<5.0",

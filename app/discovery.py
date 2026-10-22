@@ -93,7 +93,7 @@ async def _get(url: str, config: Settings, timeout: float = 15, preferred_strate
         return httpx.Response(
             fetched.status_code,
             content=fetched.content,
-            headers=fetched.headers,
+            headers={key: value for key, value in fetched.headers.items() if value is not None},
             request=httpx.Request("GET", fetched.url),
         )
 

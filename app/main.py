@@ -38,7 +38,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="OMA Fetcher", version="0.1.0", lifespan=lifespan, docs_url="/docs" if settings.api_docs_enabled else None, redoc_url="/redoc" if settings.api_docs_enabled else None)
+app = FastAPI(title="OMA Fetcher", version="1.5.0", lifespan=lifespan, docs_url="/docs" if settings.api_docs_enabled else None, redoc_url="/redoc" if settings.api_docs_enabled else None)
 app.add_middleware(CORSMiddleware, allow_origins=list(settings.web_cors_origins), allow_credentials=False, allow_methods=["GET", "POST", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type", "Prefer"])
 fetcher = EscalatingFetcher(settings)
 store = DocumentStore(settings.storage_path, settings.storage_user_dict_path)
