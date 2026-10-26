@@ -1,29 +1,33 @@
 from __future__ import annotations
 
 import asyncio
-import urllib.robotparser
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, unquote, urlsplit
 
-import trafilatura
-import httpx
 from fastapi import Depends, FastAPI, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.routing import Route
+from starlette.types import ASGIApp, Receive, Scope, Send
 
+from . import service
 from .auth import Principal, authenticate
 from .config import settings
-from .discovery import DiscoveryError, DiscoveryFetchError, origin_for, robots, sitemap
-from .fetchers import EscalatingFetcher, FetchError
-from .metadata import extract_page_metadata
-from .models import ApiEnvelope, ApiKeyCreateRequest, DocumentListRequest, FetchRequest, ProxySettingsRequest, SearchRequest
-from .quality import ContentAssessment, assess_page_content
-from .safety import UnsafeUrlError
-from .storage import DocumentStore, StorageError
+from .mcp_server import MCP_HTTP_PATH, transport_security
+from .mcp_server import mcp as mcp_server
+from .models import (
+    ApiEnvelope,
+    ApiKeyCreateRequest,
+    DocumentListRequest,
+    FetchRequest,
+    ProxySettingsRequest,
+    SearchRequest,
+)
+from .storage import StorageError
 
 
 def envelope(code: int, message: str, data: Any = None, meta: dict | None = None, status_code: int = 200, headers: dict[str, str] | None = None) -> JSONResponse:
@@ -35,13 +39,70 @@ async def lifespan(_: FastAPI):
     store.initialize()
     if store.available:
         settings.apply_proxy_override(await asyncio.to_thread(store.get_app_setting, "proxy"))
-    yield
+    # A fresh Streamable HTTP app (and session manager) per lifespan keeps the
+    # endpoint restartable, while the manager itself only supports one run().
+    mcp_http.app = mcp_server.streamable_http_app(streamable_http_path=MCP_HTTP_PATH, transport_security=transport_security())
+    try:
+        async with mcp_server.session_manager.run():
+            yield
+    finally:
+        mcp_http.app = None
 
 
 app = FastAPI(title="OMA Fetcher", version="1.5.0", lifespan=lifespan, docs_url="/docs" if settings.api_docs_enabled else None, redoc_url="/redoc" if settings.api_docs_enabled else None)
 app.add_middleware(CORSMiddleware, allow_origins=list(settings.web_cors_origins), allow_credentials=False, allow_methods=["GET", "POST", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type", "Prefer"])
-fetcher = EscalatingFetcher(settings)
-store = DocumentStore(settings.storage_path, settings.storage_user_dict_path)
+store = service.store
+
+
+class MCPServerApp:
+    """Mount point delegating to the Streamable HTTP app built per lifespan."""
+
+    def __init__(self) -> None:
+        self.app: ASGIApp | None = None
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if self.app is None:
+            response = envelope(4003, "MCP server is not ready", status_code=503)
+            await response(scope, receive, send)
+            return
+        if scope["type"] in {"http", "websocket"}:
+            # This gateway only serves the MCP endpoint, while the wrapped
+            # Streamable HTTP app registers its route at "/".
+            scope = dict(scope)
+            scope["path"] = "/"
+            scope["root_path"] = ""
+        await self.app(scope, receive, send)
+
+
+mcp_http = MCPServerApp()
+
+
+class MCPAuthMiddleware:
+    """Require a valid bearer token for `/mcp` when API authentication is on."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and settings.api_auth_enabled:
+            headers = scope.get("headers") or []
+            authorization = next((value.decode("latin-1") for key, value in headers if key == b"authorization"), None)
+            if authenticate(authorization, settings, store) is None:
+                response = envelope(
+                    401,
+                    "authentication required",
+                    meta={"scheme": "Bearer"},
+                    status_code=401,
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+                await response(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
+
+
+mcp_gateway = MCPAuthMiddleware(mcp_http)
+app.router.routes.append(Route("/mcp", endpoint=mcp_gateway))
+app.router.routes.append(Route("/mcp/", endpoint=mcp_gateway))
 
 
 def proxy_settings_view(source: str = "active") -> dict[str, Any]:
@@ -252,122 +313,16 @@ async def fetch_page(request: Request, payload: FetchRequest, persist: bool | No
     denied = require_scope(request, "fetch")
     if denied:
         return denied
-    url = str(payload.url)
-    try:
-        if settings.enforce_robots:
-            robots_text, _ = await robots(url, settings, store)
-            if robots_text:
-                parser = urllib.robotparser.RobotFileParser()
-                parser.parse(robots_text.splitlines())
-                if not parser.can_fetch(settings.user_agent, url):
-                    return envelope(2001, "blocked by robots.txt", meta={"url": url}, status_code=403)
-        extracted: str | None = None
-        page_metadata: dict | None = None
-        assessment: ContentAssessment | None = None
-        route = None
-        hostname = urlsplit(url).hostname or ""
-        if store.available and hostname:
-            try:
-                route = store.get_route(hostname, "page")
-            except StorageError:
-                route = None
-
-        async def has_extractable_content(result):
-            nonlocal extracted, page_metadata, assessment
-            quality_text = await asyncio.to_thread(
-                trafilatura.extract,
-                result.html,
-                url=result.final_url,
-                output_format="txt",
-            )
-            assessment = await asyncio.to_thread(
-                assess_page_content,
-                html=result.html,
-                url=result.final_url,
-                trafilatura_content=quality_text or "",
-                output_format=payload.output_format,
-            )
-            if assessment.usable:
-                extracted = assessment.content if assessment.extraction_method == "article_cards" else await asyncio.to_thread(
-                    trafilatura.extract,
-                    result.html,
-                    url=result.final_url,
-                    output_format=payload.output_format,
-                    with_metadata=payload.output_format in {"json", "xml"},
-                )
-                page_metadata = await asyncio.to_thread(extract_page_metadata, result.html, result.final_url)
-            return bool(extracted)
-
-        result, attempts = await fetcher.fetch(
-            url,
-            payload.timeout_seconds,
-            payload.strategy,
-            accept=has_extractable_content,
-            preferred_strategy=route.strategy if route else None,
-        )
-        if not extracted:  # Defensive: `accept` guarantees this branch is unreachable.
-            return envelope(2002, "page fetched but no main content could be extracted", meta={"attempts": attempts}, status_code=422)
-        metadata = {
-            "final_url": result.final_url,
-            "strategy": result.strategy,
-            "status_code": result.status_code,
-            "content_type": result.content_type,
-            "attempts": attempts,
-            "proxy_enabled": settings.proxy_enabled,
-            "page": page_metadata or {},
-            "content_kind": assessment.kind if assessment else None,
-            "extraction_method": assessment.extraction_method if assessment else None,
-            "failback": {
-                "route_hit": bool(route),
-                "preferred_strategy": route.strategy if route else None,
-                "accepted_strategy": result.strategy,
-                "signals": assessment.signals if assessment else [],
-            },
-        }
-        route_hostname = (page_metadata or {}).get("hostname") or urlsplit(result.final_url).hostname
-        if store.available and route_hostname:
-            try:
-                if route and route.strategy != result.strategy:
-                    store.record_route_failure(hostname=route_hostname, target_kind="page", strategy=route.strategy)
-                store.record_route_success(
-                    hostname=route_hostname,
-                    target_kind="page",
-                    strategy=result.strategy,
-                    extraction_method=assessment.extraction_method if assessment and assessment.extraction_method else "trafilatura",
-                    ttl_hours=settings.fetch_route_ttl_hours,
-                )
-            except StorageError:
-                pass
-        should_persist, persistence_source = persistence_preference(persist, prefer)
-        storage_metadata: dict[str, Any] = {"requested": should_persist, "saved": False, "source": persistence_source}
-        response_headers: dict[str, str] | None = None
-        if should_persist:
-            try:
-                saved = await asyncio.to_thread(
-                    store.persist,
-                    requested_url=url,
-                    final_url=result.final_url,
-                    content=extracted,
-                    page=page_metadata or {},
-                    strategy=result.strategy,
-                    status_code=result.status_code,
-                    content_type=result.content_type,
-                    attempts=attempts,
-                    raw_response={"code": 0, "message": "ok", "data": extracted, "meta": metadata},
-                )
-                storage_metadata.update({"saved": True, "document_id": saved.document_id, "deduplicated": saved.deduplicated})
-                if persistence_source == "prefer":
-                    response_headers = {"Preference-Applied": "persist"}
-            except StorageError as exc:
-                storage_metadata["error"] = str(exc)
-                metadata["storage"] = storage_metadata
-                return envelope(4001, "fetch succeeded but document storage failed", extracted, metadata, status_code=500)
-        metadata["storage"] = storage_metadata
-        return envelope(0, "ok", extracted, metadata, headers=response_headers)
-    except UnsafeUrlError as exc:
-        return envelope(1002, str(exc), status_code=400)
-    except (FetchError, DiscoveryError, httpx.HTTPError) as exc:
-        return envelope(2003, str(exc), meta={"attempts": getattr(exc, "attempts", [])}, status_code=502)
+    should_persist, persistence_source = persistence_preference(persist, prefer)
+    result = await service.fetch_page(
+        url=str(payload.url),
+        output_format=payload.output_format,
+        timeout_seconds=payload.timeout_seconds,
+        strategy=payload.strategy,
+        persist=should_persist,
+        persistence_source=persistence_source,
+    )
+    return envelope(result.code, result.message, result.data, result.meta, status_code=result.status_code, headers=result.headers)
 
 
 @app.post("/api/search", response_model=ApiEnvelope)
@@ -375,18 +330,14 @@ async def search_documents(request: Request, payload: SearchRequest):
     denied = require_scope(request, "search")
     if denied:
         return denied
-    try:
-        results = await asyncio.to_thread(
-            store.search,
-            query=payload.query,
-            hostname=payload.hostname,
-            published_after=payload.published_after,
-            published_before=payload.published_before,
-            limit=payload.limit,
-        )
-        return envelope(0, "ok", results, {"count": len(results)})
-    except StorageError as exc:
-        return envelope(4002, str(exc), meta={"storage_available": store.available}, status_code=503)
+    result = await service.search_documents(
+        query=payload.query,
+        hostname=payload.hostname,
+        published_after=payload.published_after,
+        published_before=payload.published_before,
+        limit=payload.limit,
+    )
+    return envelope(result.code, result.message, result.data, result.meta, status_code=result.status_code)
 
 
 @app.get("/api/documents", response_model=ApiEnvelope)
@@ -394,19 +345,15 @@ async def list_documents(request: Request, filters: DocumentListRequest = Depend
     denied = require_scope(request, "search")
     if denied:
         return denied
-    try:
-        rows, total = await asyncio.to_thread(
-            store.list_documents,
-            page=filters.page,
-            page_size=filters.page_size,
-            title=filters.title,
-            sitename=filters.sitename,
-            tags=filters.tags,
-            content=filters.content,
-        )
-        return envelope(0, "ok", rows, {"page": filters.page, "page_size": filters.page_size, "total": total, "pages": (total + filters.page_size - 1) // filters.page_size})
-    except StorageError as exc:
-        return envelope(4002, str(exc), meta={"storage_available": store.available}, status_code=503)
+    result = await service.list_documents(
+        page=filters.page,
+        page_size=filters.page_size,
+        title=filters.title,
+        sitename=filters.sitename,
+        tags=filters.tags,
+        content=filters.content,
+    )
+    return envelope(result.code, result.message, result.data, result.meta, status_code=result.status_code)
 
 
 @app.get("/api/documents/{document_id}", response_model=ApiEnvelope)
@@ -414,13 +361,8 @@ async def get_document(request: Request, document_id: int):
     denied = require_scope(request, "search")
     if denied:
         return denied
-    try:
-        document = await asyncio.to_thread(store.get_document, document_id)
-        if document is None:
-            return envelope(4041, "document not found", status_code=404)
-        return envelope(0, "ok", document)
-    except StorageError as exc:
-        return envelope(4002, str(exc), status_code=503)
+    result = await service.get_document(document_id)
+    return envelope(result.code, result.message, result.data, result.meta, status_code=result.status_code)
 
 
 @app.delete("/api/documents/{document_id}", response_model=ApiEnvelope)
@@ -442,13 +384,8 @@ async def get_robots(request: Request, url: str):
     denied = require_scope(request, "fetch")
     if denied:
         return denied
-    try:
-        body, meta = await robots(url, settings, store)
-        return envelope(0, "ok", body, meta)
-    except UnsafeUrlError as exc:
-        return envelope(1002, str(exc), status_code=400)
-    except (DiscoveryError, httpx.HTTPError) as exc:
-        return envelope(3001, str(exc), meta={"attempts": getattr(exc, "attempts", [])}, status_code=502)
+    result = await service.get_robots(url)
+    return envelope(result.code, result.message, result.data, result.meta, status_code=result.status_code)
 
 
 @app.get("/api/sitemap", response_model=ApiEnvelope)
@@ -456,13 +393,8 @@ async def get_sitemap(request: Request, url: str):
     denied = require_scope(request, "fetch")
     if denied:
         return denied
-    try:
-        body, meta = await sitemap(url, settings, store)
-        return envelope(0, "ok", body, meta)
-    except UnsafeUrlError as exc:
-        return envelope(1002, str(exc), status_code=400)
-    except DiscoveryError as exc:
-        return envelope(3002, str(exc), status_code=404)
+    result = await service.get_sitemap(url)
+    return envelope(result.code, result.message, result.data, result.meta, status_code=result.status_code)
 
 
 WEB_ROOT = Path(__file__).resolve().parent.parent / "web"

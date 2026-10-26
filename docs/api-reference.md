@@ -346,6 +346,14 @@ Health probes are anonymous even when authentication is enabled.
 | `4040` | `404` | API key not found. |
 | `4041` | `404` | Document not found. |
 
+## MCP endpoint
+
+The same process also serves MCP over Streamable HTTP at `POST /mcp` (and
+`/mcp/`). Tools call the same fetch, discovery, and storage pipeline as the
+REST endpoints and return the same `code` values. See
+[MCP server](mcp.md) for client configuration, tool contracts, scopes, and
+remote-host allowlists.
+
 ## Related documentation
 
 - [Configuration](configuration.md)

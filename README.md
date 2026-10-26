@@ -30,6 +30,8 @@ browser automation framework in every caller.
   enforced by default.
 - **Local Web UI** — send requests from the Playground, browse the document
   library, and manage API keys.
+- **MCP server** — six tools over Streamable HTTP at `/mcp`; copy one JSON
+  block into any MCP client.
 - **Single container** — published to GHCR with Chromium and all fetch
   strategies included.
 
@@ -184,8 +186,28 @@ Results, and API Keys pages, Bearer-key reuse, table filtering/pagination,
 document details/delete, and key create/copy/delete. Proxy settings can be
 changed from the settings panel without restarting the service.
 
-## Configuration
+## MCP server
 
+The running service is also an MCP server over Streamable HTTP at `/mcp`.
+Start it with `bin/ops.sh start`, then add this to any MCP client:
+
+```json
+{
+  "mcpServers": {
+    "fetchly": {
+      "type": "http",
+      "url": "http://127.0.0.1:7890/mcp"
+    }
+  }
+}
+```
+
+Tools: `fetchly_web_fetch`, `fetchly_robots`, `fetchly_sitemap`,
+`fetchly_search_results`, `fetchly_list_results`, `fetchly_get_result`. See
+[MCP server](docs/mcp.md) for stdio setup, authentication, and full tool
+contracts.
+
+## Configuration
 Copy `.env.example` to `.env` and set only what you need. Common options:
 
 | Variable | Default | Purpose |
@@ -236,6 +258,7 @@ discovery retries, and troubleshooting table.
 | --- | --- |
 | [README.zh-CN.md](README.zh-CN.md) | 中文说明 |
 | [docs/api-reference.md](docs/api-reference.md) | Endpoints, fields, formats, error codes. |
+| [docs/mcp.md](docs/mcp.md) | MCP config JSON, tools, auth, remote access. |
 | [docs/configuration.md](docs/configuration.md) | Environment variables, storage, proxy, auth. |
 | [docs/deployment.md](docs/deployment.md) | Install, Docker, upgrades, health, security. |
 | [docs/failback.md](docs/failback.md) | Escalation, assessment, diagnostics. |

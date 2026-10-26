@@ -30,6 +30,7 @@ OMA Fetcher 是一个面向单个 URL 的 **网页阅读与发现 API**。它可
   不落库，需显式开启。
 - **安全默认值** —— 默认拒绝私有/回环地址，并遵守 robots 规则。
 - **本地 Web UI** —— 在 Playground 中发请求、浏览文档库、管理 API Key。
+- **MCP 服务器** —— 在 `/mcp` 提供 Streamable HTTP 工具，复制一段 JSON 即可接入任意 MCP 客户端。
 - **单容器部署** —— 已发布到 GHCR，内置 Chromium 与全部抓取策略。
 
 ## 界面截图
@@ -180,6 +181,26 @@ curl -sS -X POST 'http://127.0.0.1:7890/api/search' \
 Bearer Key 复用、表格过滤/分页、文档详情/删除，以及 Key 创建/复制/删除。
 代理设置可在设置面板中修改，无需重启服务。
 
+## MCP 服务器
+
+运行中的服务同时是 MCP 服务器，通过 `/mcp` 提供 Streamable HTTP。先运行
+`bin/ops.sh start`，然后把下面配置加入任意 MCP 客户端：
+
+```json
+{
+  "mcpServers": {
+    "fetchly": {
+      "type": "http",
+      "url": "http://127.0.0.1:7890/mcp"
+    }
+  }
+}
+```
+
+工具：`fetchly_web_fetch`、`fetchly_robots`、`fetchly_sitemap`、
+`fetchly_search_results`、`fetchly_list_results`、`fetchly_get_result`。
+stdio 配置、认证方式和完整工具契约见 [MCP 服务器](docs/mcp.md)。
+
 ## 配置
 
 复制 `.env.example` 为 `.env`，只修改需要的项。常用配置：
@@ -229,6 +250,7 @@ Scrapling 隐身模式和 Playwright；当 Trafilatura 无法提取有效正文�
 | --- | --- |
 | [README.md](README.md) | English documentation |
 | [docs/api-reference.md](docs/api-reference.md) | 端点、字段、格式、错误码。 |
+| [docs/mcp.md](docs/mcp.md) | MCP 配置 JSON、工具、认证、远程访问。 |
 | [docs/configuration.md](docs/configuration.md) | 环境变量、存储、代理、认证。 |
 | [docs/deployment.md](docs/deployment.md) | 安装、Docker、升级、健康检查、安全。 |
 | [docs/failback.md](docs/failback.md) | 升级链路、内容评估、诊断。 |

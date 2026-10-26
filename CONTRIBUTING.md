@@ -40,7 +40,9 @@ regression test.
 
 ```text
 app/
-  main.py       FastAPI routes, middleware, envelope helpers
+  main.py       FastAPI routes, middleware, envelope helpers, MCP mount
+  service.py    Shared fetch/discovery/storage pipeline used by REST and MCP
+  mcp_server.py MCP tools (Streamable HTTP and stdio)
   models.py     Pydantic request/response models
   config.py     Environment-based settings
   fetchers.py   HTTP → browser escalation
@@ -50,8 +52,8 @@ app/
   auth.py       Bearer authentication and scopes
   safety.py     URL and private-network checks
   metadata.py   Trafilatura metadata extraction
-web/            Static Reader library UI (no build step)
-docs/           Configuration, deployment, API, failback docs
+web/            Static Fetchly Web UI (no build step)
+docs/           Configuration, deployment, API, MCP, failback docs
 tests/          Pytest suite
 scripts/        Deployment helpers
 bin/ops.sh      Local process manager

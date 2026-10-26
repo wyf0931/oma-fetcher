@@ -34,6 +34,8 @@ cp .env.example .env
 | `API_KEY_PEPPER` | empty | Server-side pepper for client-key HMACs. Required when auth is enabled; at least 32 characters. |
 | `API_DOCS_ENABLED` | `true` | Serve interactive OpenAPI docs at `/docs` and `/redoc`. |
 | `WEB_CORS_ORIGINS` | `http://localhost:8080,http://127.0.0.1:8080` | Comma-separated allowed browser origins for the API. |
+| `FETCHLY_MCP_ALLOWED_HOSTS` | localhost only | Extra `Host` allowlist entries for `/mcp`, e.g. `example.com:*`. Localhost on any port is always allowed. |
+| `FETCHLY_MCP_ALLOWED_ORIGINS` | localhost only | Extra `Origin` allowlist entries for `/mcp`, e.g. `https://app.example.com`. |
 
 Invalid values fail fast at startup. For example, `PROXY_ENABLED=on` without
 `PROXY_URL`, or authentication with short secrets, raises a configuration

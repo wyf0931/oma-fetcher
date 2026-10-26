@@ -84,6 +84,16 @@ same proxy URL to all fetch strategies. Keep credentials in the ignored `.env`
 file, not in commands, logs, or source control. macOS `127.0.0.1` proxies are
 not automatically reachable from Colima containers.
 
+## Prefer MCP when the client supports it
+
+The running service exposes MCP at `$OMA_FETCHER_BASE_URL/mcp` with the tools
+`fetchly_web_fetch`, `fetchly_robots`, `fetchly_sitemap`,
+`fetchly_search_results`, `fetchly_list_results`, and `fetchly_get_result`. If
+your client supports MCP, configure that endpoint instead of shelling out to
+curl; fetches persist by default and return `document_id` for later result
+lookups. Use the curl workflows below when MCP is unavailable. Setup JSON and
+tool contracts are in `docs/mcp.md`.
+
 ## Fetch and extract one page
 
 Markdown is the default output. Always inspect the response envelope before
