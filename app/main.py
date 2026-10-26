@@ -54,6 +54,15 @@ app.add_middleware(CORSMiddleware, allow_origins=list(settings.web_cors_origins)
 store = service.store
 
 
+@app.middleware("http")
+async def static_cache_control(request: Request, call_next):
+    """Make browsers revalidate the static UI instead of using heuristic caching."""
+    response = await call_next(request)
+    if request.method in {"GET", "HEAD"} and (request.url.path == "/" or request.url.path.endswith((".html", ".js", ".css", ".svg"))):
+        response.headers.setdefault("Cache-Control", "no-cache")
+    return response
+
+
 class MCPServerApp:
     """Mount point delegating to the Streamable HTTP app built per lifespan."""
 
