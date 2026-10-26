@@ -21,6 +21,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev \
     && .venv/bin/python -m playwright install --with-deps chromium \
     && .venv/bin/scrapling install --force \
+    && .venv/bin/patchright install chromium \
     && rm -rf /var/lib/apt/lists/* /root/.cache
 
 COPY app ./app
