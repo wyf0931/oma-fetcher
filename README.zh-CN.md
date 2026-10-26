@@ -29,7 +29,7 @@ OMA Fetcher 是一个面向单个 URL 的 **网页阅读与发现 API**。它可
 - **可选持久化与搜索** —— SQLite 文档库，使用 jieba + FTS5 搜索；抓取默认
   不落库，需显式开启。
 - **安全默认值** —— 默认拒绝私有/回环地址，并遵守 robots 规则。
-- **本地阅读器 UI** —— 浏览文档库、管理 API Key。
+- **本地 Web UI** —— 在 Playground 中发请求、浏览文档库、管理 API Key。
 - **单容器部署** —— 已发布到 GHCR，内置 Chromium 与全部抓取策略。
 
 ## 界面截图
@@ -176,7 +176,7 @@ curl -sS -X POST 'http://127.0.0.1:7890/api/search' \
 
 ## Web UI
 
-打开 `http://127.0.0.1:7890/` 进入阅读器文库。它提供 Dataset 和 Keys 页面、
+打开 `http://127.0.0.1:7890/` 进入 Fetchly Web UI。它提供 Playground、Results 和 API Keys 页面、
 Bearer Key 复用、表格过滤/分页、文档详情/删除，以及 Key 创建/复制/删除。
 代理设置可在设置面板中修改，无需重启服务。
 

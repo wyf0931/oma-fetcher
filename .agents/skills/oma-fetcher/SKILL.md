@@ -41,7 +41,7 @@ export OMA_FETCHER_BASE_URL="http://127.0.0.1:8003"
 
 For a managed background local instance, use `bin/ops.sh`. It starts/stops both
 the API and static Web UI (default 7890), and supports `start`,
-`stop`, `restart`, and `status` plus `-p PORT` for the API:
+`stop`, `restart`, and `status` plus `-p PORT` to serve both on another port:
 
 ```sh
 bin/ops.sh start -p 8003
@@ -60,6 +60,13 @@ For a non-local deployment with `API_AUTH_ENABLED=on`, send
 remain anonymous. Create keys only with the environment administrator key via
 `POST /api/keys`; the plaintext client token is returned once and is never
 recoverable from SQLite.
+
+Scopes matter when auth is on: `/api/fetch`, `/api/robots`, `/api/sitemap`, and
+`DELETE /api/documents/{id}` require `fetch`; `/api/search` and the
+`GET /api/documents*` endpoints require `search`; `/api/keys` and
+`/api/settings/proxy` require `admin`. `POST /api/keys` defaults to
+`["fetch"]`, so request `{"scopes":["fetch","search"]}` when the caller also
+needs the saved-document library.
 
 ## Deploy on a new macOS machine
 
@@ -148,6 +155,34 @@ curl -sS -X POST "$OMA_FETCHER_BASE_URL/api/search" \
   | jq '.data'
 ```
 
+`published_after` and `published_before` accept `YYYY-MM-DD`; `limit` is 1–100
+(default 20) and `meta.count` is the number of returned results.
+
+## Inspect and manage saved documents
+
+After a persisted fetch, read the document with `meta.storage.document_id`:
+
+```sh
+curl -sS "$OMA_FETCHER_BASE_URL/api/documents/$DOCUMENT_ID" \
+  | jq '.data | {id, title, url, site_name, published_at}'
+```
+
+List documents with `page`, `page_size` (1–100), `title`, `sitename`, `tags`, and
+`content` filters. `data` is an array; `meta` carries `page`, `page_size`,
+`total`, and `pages`:
+
+```sh
+curl -sS --get "$OMA_FETCHER_BASE_URL/api/documents" \
+  --data-urlencode 'content=prompt caching' \
+  --data-urlencode 'page_size=20' \
+  | jq '{code, total: .meta.total, titles: [.data[].title]}'
+```
+
+Delete a document and its fetch history with `DELETE
+/api/documents/{id}`; it needs the `fetch` scope, while listing and reading need
+`search`. The library endpoints return nonzero `code` (not a `null` body) when
+the store is unavailable.
+
 ## Read robots.txt
 
 ```sh
@@ -185,21 +220,25 @@ curl -sS --get "$OMA_FETCHER_BASE_URL/api/sitemap" \
 
 ## Diagnose fallback behavior
 
-Discovery follows `httpx → curl-cffi → Scrapling HTTP → Scrapling stealth
-browser` and retries the complete chain with bounded jitter. An empty HTTP 202
-is not treated as a robots/sitemap success; it escalates to the next strategy.
-Page fetching additionally escalates to Playwright. Every completed attempt
-appears in `meta.attempts`; server logs contain matching `discovery.fetch`
-records.
+Discovery (`/api/robots`, `/api/sitemap`) follows `httpx → curl-cffi → Scrapling
+HTTP → Scrapling stealth browser` and retries the complete chain with bounded
+jitter. Page fetching uses a different chain: `httpx → curl-cffi → Scrapling
+stealth → Playwright`. An empty HTTP 202 is not treated as a robots/sitemap
+success; discovery only accepts HTTP 200 with a nonempty body or an explicit
+404, so a placeholder escalates to the next strategy. Every attempt appears in
+`meta.attempts`: page-fetch entries carry `strategy` and `reason`, while
+discovery entries also carry `round`, `status_code`, and `error`. Server logs
+add a matching `discovery.fetch` line for discovery attempts only.
 
 - `data: null` plus nonzero `code` means all eligible attempts failed or a
   policy check rejected the request. Report `message` and `meta.attempts`.
 - A 403 in an earlier attempt is expected for protected sites if a later stage
   succeeds. Report the winning `strategy`, not the earlier 403 as final failure.
-- Read `meta.failback` when present. It reports whether a cached
-  hostname/target-kind route was used, which strategy was accepted, and safe
-  quality signals such as `rendered_article_cards`; it never includes proxy
-  settings or credentials.
+- Read `meta.failback` on `/api/fetch` responses when present. It reports
+  whether a cached hostname/target-kind route was used, which strategy was
+  accepted, and safe quality signals such as `rendered_article_cards`; it never
+  includes proxy settings or credentials. Robots and sitemap responses do not
+  include `meta.failback`.
 - A 200 response can still be rejected when it contains cookie/browser fallback
   text. Listing pages can instead return Markdown extracted from rendered
   article cards, with `meta.content_kind` set to `listing`.

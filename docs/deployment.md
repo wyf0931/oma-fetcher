@@ -183,9 +183,9 @@ credential handling.
 
 ## Web UI
 
-Open `http://127.0.0.1:7890/` for the Reader library UI. It provides Dataset and
-Keys pages, Bearer-key reuse, table filtering/pagination, document
-details/delete, and key create/copy/delete.
+Open `http://127.0.0.1:7890/` for the Fetchly Web UI. It provides Playground,
+Results, and API Keys pages, Bearer-key reuse, table filtering/pagination,
+document details/delete, key create/copy/delete, and a proxy settings panel.
 
 Interactive OpenAPI documentation is available at `/docs` when
 `API_DOCS_ENABLED=true` (the default).

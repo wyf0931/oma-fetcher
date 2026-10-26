@@ -79,7 +79,7 @@ as a listing and extract article cards; listings honor the same format:
 | `meta.strategy` | Strategy that produced the accepted response. |
 | `meta.status_code` | Final HTTP status code. |
 | `meta.content_type` | Final response content type. |
-| `meta.attempts` | Ordered attempt trace with strategy, round, status, and error. |
+| `meta.attempts` | Ordered attempt trace: page fetches report `strategy` and `reason`; discovery attempts add `round`, `status_code`, and `error`. |
 | `meta.proxy_enabled` | Whether a proxy was active for the request. |
 | `meta.page` | Trafilatura metadata (see below). |
 | `meta.content_kind` | `article` or `listing`. |
@@ -175,7 +175,7 @@ curl -sS -X POST 'http://127.0.0.1:7890/api/search' \
 
 ## Document management
 
-The Reader library UI uses these CRUD endpoints. Listing and reading require
+The Web UI uses these CRUD endpoints. Listing and reading require
 the `search` scope; deletion requires the `fetch` scope.
 
 ```text

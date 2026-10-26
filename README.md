@@ -28,7 +28,8 @@ browser automation framework in every caller.
   jieba + FTS5 search; fetching stays non-persistent unless you opt in.
 - **Safety defaults** — private/loopback targets rejected and robots rules
   enforced by default.
-- **Local Reader UI** — browse the document library and manage API keys.
+- **Local Web UI** — send requests from the Playground, browse the document
+  library, and manage API keys.
 - **Single container** — published to GHCR with Chromium and all fetch
   strategies included.
 
@@ -178,10 +179,10 @@ Full request fields, response metadata, and error codes are in the
 
 ## Web UI
 
-Open `http://127.0.0.1:7890/` for the Reader library. It provides Dataset and
-Keys pages, Bearer-key reuse, table filtering/pagination, document
-details/delete, and key create/copy/delete. Proxy settings can be changed from
-the settings panel without restarting the service.
+Open `http://127.0.0.1:7890/` for the Fetchly Web UI. It provides Playground,
+Results, and API Keys pages, Bearer-key reuse, table filtering/pagination,
+document details/delete, and key create/copy/delete. Proxy settings can be
+changed from the settings panel without restarting the service.
 
 ## Configuration
 
