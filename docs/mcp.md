@@ -29,19 +29,31 @@ Cursor `mcp.json`, or any client that reads `mcpServers`):
   "mcpServers": {
     "fetchly": {
       "type": "http",
-      "url": "http://127.0.0.1:7890/mcp"
+      "url": "http://127.0.0.1:7890/mcp",
+      "headers": {
+        "Authorization": "Bearer ${FETCHLY_API_TOKEN}"
+      }
     }
   }
 }
 ```
 
-Some clients reject the `type` field; omit it and keep `url`:
+Set `FETCHLY_API_TOKEN` in the client environment, or paste the token directly
+in place of the placeholder. When `API_AUTH_ENABLED=off`, the `headers` block is
+optional. `${VAR}` expansion is supported by Claude Code and some other clients;
+if yours does not expand it, paste the token string instead (and keep the file
+out of version control).
+
+Some clients reject the `type` field; omit it and keep `url` and `headers`:
 
 ```json
 {
   "mcpServers": {
     "fetchly": {
-      "url": "http://127.0.0.1:7890/mcp"
+      "url": "http://127.0.0.1:7890/mcp",
+      "headers": {
+        "Authorization": "Bearer ${FETCHLY_API_TOKEN}"
+      }
     }
   }
 }
@@ -54,7 +66,10 @@ VS Code uses a `servers` key instead of `mcpServers`:
   "servers": {
     "fetchly": {
       "type": "http",
-      "url": "http://127.0.0.1:7890/mcp"
+      "url": "http://127.0.0.1:7890/mcp",
+      "headers": {
+        "Authorization": "Bearer ${FETCHLY_API_TOKEN}"
+      }
     }
   }
 }
@@ -80,11 +95,17 @@ For clients that only launch a command, run the same tools over stdio:
         "python",
         "-m",
         "app.mcp_server"
-      ]
+      ],
+      "env": {
+        "FETCHLY_MCP_TOKEN": "${FETCHLY_API_TOKEN}"
+      }
     }
   }
 }
 ```
+
+The `env` entry is only needed when `API_AUTH_ENABLED=on`; stdio has no HTTP
+headers, so the server reads the token from `FETCHLY_MCP_TOKEN`.
 
 stdio mode opens the SQLite store directly and does not need the HTTP service.
 
@@ -131,12 +152,16 @@ When `API_AUTH_ENABLED=on`, `/mcp` requires the same Bearer token as `/api/*`:
       "type": "http",
       "url": "http://127.0.0.1:7890/mcp",
       "headers": {
-        "Authorization": "Bearer oma_your_client_token"
+        "Authorization": "Bearer ${FETCHLY_API_TOKEN}"
       }
     }
   }
 }
 ```
+
+The header name and value match the REST API exactly: `Authorization: Bearer
+<token>`. Use a client token created with `POST /api/keys`, or the environment
+`API_ADMIN_KEY`.
 
 Per-tool scopes match the REST endpoints:
 

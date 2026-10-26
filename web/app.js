@@ -8,7 +8,7 @@ function app() {
     init() { window.addEventListener('oma-auth-required', () => { this.showAuthDialog = true; }); window.addEventListener('load', () => lucide.createIcons(), {once: true}); },
     navigate(view) { this.view = view; if (view === 'pages') this.loadDocuments(1); if (view === 'keys') this.loadKeys(); },
     get playgroundMethod() { return this.playgroundMode === 'fetch' ? 'POST' : 'GET'; },
-    get mcpConfig() { return JSON.stringify({mcpServers: {fetchly: {type: 'http', url: `${window.location.origin}/mcp`}}}, null, 2); },
+    get mcpConfig() { return JSON.stringify({mcpServers: {fetchly: {type: 'http', url: `${window.location.origin}/mcp`, headers: {Authorization: 'Bearer ${FETCHLY_API_TOKEN}'}}}}, null, 2); },
     setPlaygroundMode(mode) { this.playgroundMode = mode; this.playgroundResponse = null; this.responseTab = 'body'; this.$nextTick(() => lucide.createIcons()); },
     async runPlayground() {
       if (!this.playground.url || this.playgroundLoading) return;

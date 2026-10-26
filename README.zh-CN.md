@@ -192,11 +192,17 @@ Bearer Key 复用、表格过滤/分页、文档详情/删除，以及 Key 创�
   "mcpServers": {
     "fetchly": {
       "type": "http",
-      "url": "http://127.0.0.1:7890/mcp"
+      "url": "http://127.0.0.1:7890/mcp",
+      "headers": {
+        "Authorization": "Bearer ${FETCHLY_API_TOKEN}"
+      }
     }
   }
 }
 ```
+
+在客户端环境中设置 `FETCHLY_API_TOKEN`（或直接填入 token）。当
+`API_AUTH_ENABLED=off` 时可以省略 `headers`。
 
 工具：`fetchly_web_fetch`、`fetchly_robots`、`fetchly_sitemap`、
 `fetchly_search_results`、`fetchly_list_results`、`fetchly_get_result`。

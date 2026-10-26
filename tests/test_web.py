@@ -15,3 +15,5 @@ def test_static_assets_revalidate_and_include_mcp_dialog() -> None:
     assert "app.js?v=" in index.text
     assert "showMcpDialog" in script.text
     assert "get mcpConfig()" in script.text
+    assert "FETCHLY_API_TOKEN" in script.text
+    assert "headers:" in script.text

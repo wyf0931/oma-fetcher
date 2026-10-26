@@ -198,11 +198,17 @@ icon in the top bar shows the same JSON with a copy button):
   "mcpServers": {
     "fetchly": {
       "type": "http",
-      "url": "http://127.0.0.1:7890/mcp"
+      "url": "http://127.0.0.1:7890/mcp",
+      "headers": {
+        "Authorization": "Bearer ${FETCHLY_API_TOKEN}"
+      }
     }
   }
 }
 ```
+
+Set `FETCHLY_API_TOKEN` in the client environment (or paste the token directly).
+When `API_AUTH_ENABLED=off`, the `headers` block can be omitted.
 
 Tools: `fetchly_web_fetch`, `fetchly_robots`, `fetchly_sitemap`,
 `fetchly_search_results`, `fetchly_list_results`, `fetchly_get_result`. See
