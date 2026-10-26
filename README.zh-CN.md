@@ -179,12 +179,13 @@ curl -sS -X POST 'http://127.0.0.1:7890/api/search' \
 
 打开 `http://127.0.0.1:7890/` 进入 Fetchly Web UI。它提供 Playground、Results 和 API Keys 页面、
 Bearer Key 复用、表格过滤/分页、文档详情/删除，以及 Key 创建/复制/删除。
-代理设置可在设置面板中修改，无需重启服务。
+代理设置可在设置面板中修改，无需重启服务；旁边的插头图标可查看并复制 MCP 客户端配置。
 
 ## MCP 服务器
 
 运行中的服务同时是 MCP 服务器，通过 `/mcp` 提供 Streamable HTTP。先运行
-`bin/ops.sh start`，然后把下面配置加入任意 MCP 客户端：
+`bin/ops.sh start`，然后把下面配置加入任意 MCP 客户端（顶部插头图标会显示
+相同 JSON 并提供复制按钮）：
 
 ```json
 {

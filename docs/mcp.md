@@ -12,6 +12,9 @@ fetch pipeline, SQLite Results library, proxy, and authentication as `/api/*`.
 
 ## Copy-paste client config
 
+The running Web UI shows this JSON behind the plug icon in the top bar (next to
+the settings icon) with a one-click copy button.
+
 Start the service first:
 
 ```sh

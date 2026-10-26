@@ -184,12 +184,14 @@ Full request fields, response metadata, and error codes are in the
 Open `http://127.0.0.1:7890/` for the Fetchly Web UI. It provides Playground,
 Results, and API Keys pages, Bearer-key reuse, table filtering/pagination,
 document details/delete, and key create/copy/delete. Proxy settings can be
-changed from the settings panel without restarting the service.
+changed from the settings panel without restarting the service, and the plug
+icon next to it opens a copy-ready MCP client config.
 
 ## MCP server
 
 The running service is also an MCP server over Streamable HTTP at `/mcp`.
-Start it with `bin/ops.sh start`, then add this to any MCP client:
+Start it with `bin/ops.sh start`, then add this to any MCP client (the plug
+icon in the top bar shows the same JSON with a copy button):
 
 ```json
 {

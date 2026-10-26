@@ -4,10 +4,11 @@ function app() {
     filters: {content: '', sitename: '', tags: ''}, pagination: {page: 1, page_size: 20, total: 0, pages: 0},
     detail: null, detailDialog: false, detailTab: 'body', showAuthDialog: false, authInput: '', showKeyDialog: false, newKeyName: '', tokenCache: {}, toast: '', toastType: 'success',
     proxyDialog: false, proxyLoading: false, proxySaving: false, proxyUseEnvironment: false, proxyOriginalSnapshot: '', proxy: {enabled: false, scheme: 'http', server: '', port: '', username: '', password: '', clearCredentials: false, source: 'environment', usernameConfigured: false, passwordConfigured: false},
-    playgroundMode: 'fetch', playground: {url: '', outputFormat: 'markdown', strategy: 'auto', timeout: 45, persist: false}, playgroundLoading: false, playgroundResponse: null, responseTab: 'body',
+    playgroundMode: 'fetch', playground: {url: '', outputFormat: 'markdown', strategy: 'auto', timeout: 45, persist: false}, playgroundLoading: false, playgroundResponse: null, responseTab: 'body', showMcpDialog: false,
     init() { window.addEventListener('oma-auth-required', () => { this.showAuthDialog = true; }); window.addEventListener('load', () => lucide.createIcons(), {once: true}); },
     navigate(view) { this.view = view; if (view === 'pages') this.loadDocuments(1); if (view === 'keys') this.loadKeys(); },
     get playgroundMethod() { return this.playgroundMode === 'fetch' ? 'POST' : 'GET'; },
+    get mcpConfig() { return JSON.stringify({mcpServers: {fetchly: {type: 'http', url: `${window.location.origin}/mcp`}}}, null, 2); },
     setPlaygroundMode(mode) { this.playgroundMode = mode; this.playgroundResponse = null; this.responseTab = 'body'; this.$nextTick(() => lucide.createIcons()); },
     async runPlayground() {
       if (!this.playground.url || this.playgroundLoading) return;
