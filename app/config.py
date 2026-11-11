@@ -25,8 +25,12 @@ class Settings:
     storage_user_dict_path: str = field(default_factory=lambda: os.getenv("STORAGE_USER_DICT_PATH", "dictionaries/custom.txt"))
     fetch_route_ttl_hours: int = field(default_factory=lambda: int(os.getenv("FETCH_ROUTE_TTL_HOURS", "168")))
     api_auth_enabled: bool = field(default_factory=lambda: _as_bool("API_AUTH_ENABLED", False))
-    api_admin_key: str = field(default_factory=lambda: os.getenv("API_ADMIN_KEY", "").strip())
     api_key_pepper: str = field(default_factory=lambda: os.getenv("API_KEY_PEPPER", "").strip())
+    session_ttl_hours: int = field(default_factory=lambda: int(os.getenv("SESSION_TTL_HOURS", "168")))
+    session_cookie_name: str = field(default_factory=lambda: os.getenv("SESSION_COOKIE_NAME", "oma_session").strip() or "oma_session")
+    bootstrap_admin_email: str = field(default_factory=lambda: os.getenv("BOOTSTRAP_ADMIN_EMAIL", "").strip().lower())
+    bootstrap_admin_password: str = field(default_factory=lambda: os.getenv("BOOTSTRAP_ADMIN_PASSWORD", ""))
+    debug: bool = field(default_factory=lambda: _as_bool("DEBUG", False))
     api_docs_enabled: bool = field(default_factory=lambda: _as_bool("API_DOCS_ENABLED", True))
     web_cors_origins: tuple[str, ...] = field(default_factory=lambda: tuple(item.strip() for item in os.getenv("WEB_CORS_ORIGINS", "http://localhost:8080,http://127.0.0.1:8080").split(",") if item.strip()))
     proxy_enabled: bool = field(default_factory=lambda: _as_bool("PROXY_ENABLED", False))
@@ -42,8 +46,10 @@ class Settings:
             raise ValueError("PROXY_URL must be set when PROXY_ENABLED=on")
         if self.proxy_url and urlsplit(self.proxy_url).scheme not in {"http", "https", "socks5", "socks5h"}:
             raise ValueError("PROXY_URL must use http(s) or socks5(s) scheme")
-        if self.api_auth_enabled and (len(self.api_admin_key) < 32 or len(self.api_key_pepper) < 32):
-            raise ValueError("API_ADMIN_KEY and API_KEY_PEPPER must each be at least 32 characters when API_AUTH_ENABLED=on")
+        if self.api_auth_enabled and len(self.api_key_pepper) < 32:
+            raise ValueError("API_KEY_PEPPER must be at least 32 characters when API_AUTH_ENABLED=on")
+        if self.session_ttl_hours < 1:
+            raise ValueError("SESSION_TTL_HOURS must be at least 1")
 
     @property
     def active_proxy_url(self) -> str | None:

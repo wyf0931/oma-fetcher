@@ -3,9 +3,10 @@ function app() {
     apiClient: window.apiClient, view: 'playground', documents: [], keys: [], loading: false, keysLoading: false,
     filters: {content: '', sitename: '', tags: ''}, pagination: {page: 1, page_size: 20, total: 0, pages: 0},
     detail: null, detailDialog: false, detailTab: 'body', showAuthDialog: false, authInput: '', showKeyDialog: false, newKeyName: '', tokenCache: {}, toast: '', toastType: 'success',
+    currentUser: null, showAccountDialog: false, accountMode: 'login', accountLoading: false, account: {email: '', password: '', displayName: ''},
     proxyDialog: false, proxyLoading: false, proxySaving: false, proxyUseEnvironment: false, proxyOriginalSnapshot: '', proxy: {enabled: false, scheme: 'http', server: '', port: '', username: '', password: '', clearCredentials: false, source: 'environment', usernameConfigured: false, passwordConfigured: false},
     playgroundMode: 'fetch', playground: {url: '', outputFormat: 'markdown', strategy: 'auto', timeout: 45, persist: false}, playgroundLoading: false, playgroundResponse: null, responseTab: 'body', showMcpDialog: false,
-    init() { window.addEventListener('oma-auth-required', () => { this.showAuthDialog = true; }); window.addEventListener('load', () => lucide.createIcons(), {once: true}); },
+    init() { window.addEventListener('oma-auth-required', () => { this.showAuthDialog = true; }); window.addEventListener('load', () => lucide.createIcons(), {once: true}); this.loadCurrentUser(); },
     navigate(view) { this.view = view; if (view === 'pages') this.loadDocuments(1); if (view === 'keys') this.loadKeys(); },
     get playgroundMethod() { return this.playgroundMode === 'fetch' ? 'POST' : 'GET'; },
     get mcpConfig() { return JSON.stringify({mcpServers: {fetchly: {type: 'http', url: `${window.location.origin}/mcp`, headers: {Authorization: 'Bearer ${FETCHLY_API_TOKEN}'}}}}, null, 2); },
@@ -107,6 +108,24 @@ function app() {
     async copyPlaygroundBlock() { const content = this.responseTab === 'body' ? this.playgroundResponse?.data || '(empty response body)' : JSON.stringify(this.playgroundResponse?.meta || {}, null, 2); if (content) await this.copyText(content); },
     async copyDetailBlock() { const content = this.detailTab === 'body' ? this.detail?.content : JSON.stringify(this.detail?.page || {}, null, 2); if (content) await this.copyText(content); },
     saveKey() { if (!this.authInput.trim()) return; this.apiClient.setKey(this.authInput); this.authInput = ''; this.showAuthDialog = false; this.notify('API key saved'); this.loadDocuments(1); },
+    openAccount(mode = 'login') { this.accountMode = mode; this.showAccountDialog = true; },
+    async submitAccount() {
+      if (this.accountLoading) return;
+      this.accountLoading = true;
+      const registering = this.accountMode === 'register';
+      try {
+        if (registering) await this.apiClient.auth.register({email: this.account.email, password: this.account.password, display_name: this.account.displayName || null});
+        await this.apiClient.auth.login({email: this.account.email, password: this.account.password});
+        await this.loadCurrentUser();
+        this.showAccountDialog = false;
+        this.account.password = '';
+        this.notify(registering ? 'Account created' : 'Signed in');
+        this.loadDocuments(1);
+      } catch (error) { this.notify(error.message || 'Authentication failed', 'error'); }
+      finally { this.accountLoading = false; }
+    },
+    async loadCurrentUser() { try { const result = await this.apiClient.auth.me(); this.currentUser = result.data || null; } catch { this.currentUser = null; } },
+    async logoutAccount() { try { await this.apiClient.auth.logout(); } catch {} this.currentUser = null; this.notify('Signed out'); },
     handleError(error) { if (error.status === 401) this.showAuthDialog = true; else this.notify(error.message || 'Request failed', 'error'); },
     notify(message, type = 'success') { this.toast = message; this.toastType = type; setTimeout(() => { this.toast = ''; }, 3200); },
     truncate(value) { return value.length > 20 ? `${value.slice(0, 20)}…` : value; },

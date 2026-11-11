@@ -4,7 +4,9 @@ from typing import Any, Literal
 
 from datetime import datetime
 
-from pydantic import AnyHttpUrl, BaseModel, Field
+from pydantic import AnyHttpUrl, BaseModel, Field, field_validator
+
+from .auth import validate_email, validate_password
 
 
 OutputFormat = Literal["markdown", "txt", "json", "xml"]
@@ -60,3 +62,43 @@ class ProxySettingsRequest(BaseModel):
     username: str | None = Field(default=None, max_length=255)
     password: str | None = Field(default=None, max_length=1024)
     clear_credentials: bool = False
+
+
+class RegisterRequest(BaseModel):
+    email: str = Field(min_length=1, max_length=255)
+    password: str = Field(min_length=1, max_length=1024)
+    display_name: str | None = Field(default=None, max_length=80)
+
+    @field_validator("email")
+    @classmethod
+    def _normalize_email(cls, value: str) -> str:
+        try:
+            return validate_email(value)
+        except ValueError as exc:
+            raise ValueError("a valid email address is required") from exc
+
+    @field_validator("password")
+    @classmethod
+    def _strong_password(cls, value: str) -> str:
+        try:
+            return validate_password(value)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+
+
+class LoginRequest(BaseModel):
+    email: str = Field(min_length=1, max_length=255)
+    password: str = Field(min_length=1, max_length=1024)
+
+    @field_validator("email")
+    @classmethod
+    def _normalize_email(cls, value: str) -> str:
+        try:
+            return validate_email(value)
+        except ValueError as exc:
+            raise ValueError("a valid email address is required") from exc
+
+
+class AdminUserUpdateRequest(BaseModel):
+    role: Literal["user", "admin"] | None = None
+    status: Literal["active", "disabled"] | None = None
