@@ -6,7 +6,16 @@ function app() {
     currentUser: null, showAccountDialog: false, accountMode: 'login', accountLoading: false, account: {email: '', password: '', displayName: ''},
     proxyDialog: false, proxyLoading: false, proxySaving: false, proxyUseEnvironment: false, proxyOriginalSnapshot: '', proxy: {enabled: false, scheme: 'http', server: '', port: '', username: '', password: '', clearCredentials: false, source: 'environment', usernameConfigured: false, passwordConfigured: false},
     playgroundMode: 'fetch', playground: {url: '', outputFormat: 'markdown', strategy: 'auto', timeout: 45, persist: false}, playgroundLoading: false, playgroundResponse: null, responseTab: 'body', showMcpDialog: false,
-    init() { window.addEventListener('oma-auth-required', () => { this.showAuthDialog = true; }); window.addEventListener('load', () => lucide.createIcons(), {once: true}); this.loadCurrentUser(); },
+    locale: (window.FetchlyI18n && window.FetchlyI18n.detectLocale()) || 'en',
+    supportedLocales: (window.FetchlyI18n && window.FetchlyI18n.supported) || ['en'],
+    setLocale(locale) {
+      if (!window.FetchlyI18n || !window.FetchlyI18n.isSupported(locale)) return;
+      this.locale = locale;
+      try { window.localStorage.setItem(window.FetchlyI18n.STORAGE_KEY, locale); } catch { /* ignore */ }
+      document.documentElement.setAttribute('lang', locale);
+      this.$nextTick(() => lucide.createIcons());
+    },
+    init() { document.documentElement.setAttribute('lang', this.locale); window.addEventListener('oma-auth-required', () => { this.showAuthDialog = true; }); window.addEventListener('load', () => lucide.createIcons(), {once: true}); this.loadCurrentUser(); },
     navigate(view) { this.view = view; if (view === 'pages') this.loadDocuments(1); if (view === 'keys') this.loadKeys(); },
     get playgroundMethod() { return this.playgroundMode === 'fetch' ? 'POST' : 'GET'; },
     get mcpConfig() { return JSON.stringify({mcpServers: {fetchly: {type: 'http', url: `${window.location.origin}/mcp`, headers: {Authorization: 'Bearer ${FETCHLY_API_TOKEN}'}}}}, null, 2); },
@@ -39,10 +48,10 @@ function app() {
     },
     async loadDocuments(page = 1) { this.loading = true; try { const query = new URLSearchParams({page, page_size: 20}); Object.entries(this.filters).forEach(([k,v]) => v && query.set(k,v)); const result = await this.apiClient.request(`/api/documents?${query}`); this.documents = result.data || []; this.pagination = result.meta || this.pagination; } catch (error) { this.handleError(error); } finally { this.loading = false; this.$nextTick(() => lucide.createIcons()); } },
     async openDocument(id) { try { this.detail = (await this.apiClient.request(`/api/documents/${id}`)).data; this.detailTab = 'body'; this.detailDialog = true; this.$nextTick(() => lucide.createIcons()); } catch (error) { this.handleError(error); } },
-    async deleteDocument(id) { if (!window.confirm('Delete this result and its fetch history?')) return; try { await this.apiClient.request(`/api/documents/${id}`, {method: 'DELETE'}); this.notify('Result deleted'); await this.loadDocuments(this.pagination.page); } catch (error) { this.handleError(error); } },
+    async deleteDocument(id) { if (!window.confirm(this.$t('confirm.deleteResult'))) return; try { await this.apiClient.request(`/api/documents/${id}`, {method: 'DELETE'}); this.notify(this.$t('toast.resultDeleted')); await this.loadDocuments(this.pagination.page); } catch (error) { this.handleError(error); } },
     async loadKeys() { this.keysLoading = true; try { this.keys = (await this.apiClient.request('/api/keys')).data || []; } catch (error) { this.handleError(error); } finally { this.keysLoading = false; this.$nextTick(() => lucide.createIcons()); } },
-    async createKey() { try { const result = await this.apiClient.request('/api/keys', {method: 'POST', body: JSON.stringify({name: this.newKeyName.trim(), scopes: ['fetch', 'search']})}); this.apiClient.saveToken(result.data.id, result.data.token); this.newKeyName = ''; this.showKeyDialog = false; await this.loadKeys(); this.notify('API key created; use Copy in the table'); } catch (error) { this.handleError(error); } },
-    async revokeKey(id) { if (!window.confirm('Delete this API key permanently?')) return; try { await this.apiClient.request(`/api/keys/${id}`, {method: 'DELETE'}); this.apiClient.removeToken(id); this.notify('API key deleted'); await this.loadKeys(); } catch (error) { this.handleError(error); } },
+    async createKey() { try { const result = await this.apiClient.request('/api/keys', {method: 'POST', body: JSON.stringify({name: this.newKeyName.trim(), scopes: ['fetch', 'search']})}); this.apiClient.saveToken(result.data.id, result.data.token); this.newKeyName = ''; this.showKeyDialog = false; await this.loadKeys(); this.notify(this.$t('toast.keyCreated')); } catch (error) { this.handleError(error); } },
+    async revokeKey(id) { if (!window.confirm(this.$t('confirm.deleteKey'))) return; try { await this.apiClient.request(`/api/keys/${id}`, {method: 'DELETE'}); this.apiClient.removeToken(id); this.notify(this.$t('toast.keyDeleted')); await this.loadKeys(); } catch (error) { this.handleError(error); } },
     async openProxySettings() {
       this.proxyDialog = true; this.proxyLoading = true;
       try {
@@ -61,7 +70,7 @@ function app() {
         if (this.proxyUseEnvironment) {
           const result = await this.apiClient.request('/api/settings/proxy', {method: 'DELETE'});
           this.updateProxyForm(result.data);
-          this.notify('Environment proxy settings applied');
+          this.notify(this.$t('toast.proxyApplied'));
           return;
         }
         const payload = {enabled: this.proxy.enabled, scheme: this.proxy.scheme, server: this.proxy.server.trim(), port: this.proxy.port ? Number(this.proxy.port) : null, clear_credentials: this.proxy.clearCredentials};
@@ -69,7 +78,7 @@ function app() {
         if (this.proxy.password) payload.password = this.proxy.password;
         const result = await this.apiClient.request('/api/settings/proxy', {method: 'PUT', body: JSON.stringify(payload)});
         this.updateProxyForm(result.data);
-        this.notify('Proxy settings saved and applied');
+        this.notify(this.$t('toast.proxySaved'));
       } catch (error) { this.handleError(error); }
       finally { this.proxySaving = false; }
     },
@@ -90,7 +99,7 @@ function app() {
         const value = result.data || {};
         this.proxy = {...this.proxy, ...value, source: 'environment-preview', port: value.port ? String(value.port) : '', username: '', password: '', clearCredentials: false, usernameConfigured: value.username_configured, passwordConfigured: value.password_configured};
         this.proxyUseEnvironment = true;
-        this.notify('Environment settings loaded; save to apply');
+        this.notify(this.$t('toast.envLoaded'));
       }
       catch (error) { this.handleError(error); }
       finally { this.proxySaving = false; }
@@ -98,7 +107,7 @@ function app() {
     tokenFor(id) { return this.apiClient.getToken(id); },
     maskedKey(key) { return key?.key_prefix ? `${key.key_prefix.slice(0, 4)}***${(key.key_suffix || key.key_prefix.slice(-4))}` : '••••••••'; },
     async copyToken(id) { const token = this.tokenFor(id); if (token) await this.copyText(token); },
-    async copyText(text) { try { await navigator.clipboard.writeText(text); this.notify('Copied to clipboard'); } catch { this.notify('Clipboard unavailable; copy the text manually', 'error'); } },
+    async copyText(text) { try { await navigator.clipboard.writeText(text); this.notify(this.$t('toast.copied')); } catch { this.notify(this.$t('toast.clipboardUnavailable'), 'error'); } },
     formatJson(value) { return JSON.stringify(value ?? {}, null, 2) ?? 'null'; },
     highlightJson(value) {
       const source = this.formatJson(value);
@@ -107,7 +116,7 @@ function app() {
     },
     async copyPlaygroundBlock() { const content = this.responseTab === 'body' ? this.playgroundResponse?.data || '(empty response body)' : JSON.stringify(this.playgroundResponse?.meta || {}, null, 2); if (content) await this.copyText(content); },
     async copyDetailBlock() { const content = this.detailTab === 'body' ? this.detail?.content : JSON.stringify(this.detail?.page || {}, null, 2); if (content) await this.copyText(content); },
-    saveKey() { if (!this.authInput.trim()) return; this.apiClient.setKey(this.authInput); this.authInput = ''; this.showAuthDialog = false; this.notify('API key saved'); this.loadDocuments(1); },
+    saveKey() { if (!this.authInput.trim()) return; this.apiClient.setKey(this.authInput); this.authInput = ''; this.showAuthDialog = false; this.notify(this.$t('toast.apiKeySaved')); this.loadDocuments(1); },
     openAccount(mode = 'login') { this.accountMode = mode; this.showAccountDialog = true; },
     async submitAccount() {
       if (this.accountLoading) return;
@@ -119,18 +128,18 @@ function app() {
         await this.loadCurrentUser();
         this.showAccountDialog = false;
         this.account.password = '';
-        this.notify(registering ? 'Account created' : 'Signed in');
+        this.notify(registering ? this.$t('account.created') : this.$t('account.signedIn'));
         this.loadDocuments(1);
-      } catch (error) { this.notify(error.message || 'Authentication failed', 'error'); }
+      } catch (error) { this.notify(error.message || this.$t('account.failed'), 'error'); }
       finally { this.accountLoading = false; }
     },
     async loadCurrentUser() { try { const result = await this.apiClient.auth.me(); this.currentUser = result.data || null; } catch { this.currentUser = null; } },
-    async logoutAccount() { try { await this.apiClient.auth.logout(); } catch {} this.currentUser = null; this.notify('Signed out'); },
-    handleError(error) { if (error.status === 401) this.showAuthDialog = true; else this.notify(error.message || 'Request failed', 'error'); },
+    async logoutAccount() { try { await this.apiClient.auth.logout(); } catch {} this.currentUser = null; this.notify(this.$t('account.signedOut')); },
+    handleError(error) { if (error.status === 401) this.showAuthDialog = true; else this.notify(error.message || this.$t('toast.requestFailed'), 'error'); },
     notify(message, type = 'success') { this.toast = message; this.toastType = type; setTimeout(() => { this.toast = ''; }, 3200); },
     truncate(value) { return value.length > 20 ? `${value.slice(0, 20)}…` : value; },
     formatDate(value) { if (!value) return '—'; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleString(); },
-    paginationLabel() { const start = this.pagination.total ? (this.pagination.page - 1) * this.pagination.page_size + 1 : 0; const end = Math.min(this.pagination.page * this.pagination.page_size, this.pagination.total); return `${start}–${end} of ${this.pagination.total}`; },
+    paginationLabel() { const start = this.pagination.total ? (this.pagination.page - 1) * this.pagination.page_size + 1 : 0; const end = Math.min(this.pagination.page * this.pagination.page_size, this.pagination.total); return `${start}–${end} · ${this.$t('results.total', {n: this.pagination.total})}`; },
     paginationPages() {
       const pages = Math.max(0, Number(this.pagination.pages) || 0);
       const current = Math.min(Math.max(1, Number(this.pagination.page) || 1), pages || 1);
