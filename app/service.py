@@ -49,6 +49,7 @@ async def fetch_page(
     strategy: str = "auto",
     persist: bool = False,
     persistence_source: str = "default",
+    user_id: int | None = None,
 ) -> ServiceResult:
     try:
         if settings.enforce_robots:
@@ -150,6 +151,7 @@ async def fetch_page(
                     content_type=result.content_type,
                     attempts=attempts,
                     raw_response={"code": 0, "message": "ok", "data": extracted, "meta": metadata},
+                    user_id=user_id,
                 )
                 storage_metadata.update({"saved": True, "document_id": saved.document_id, "deduplicated": saved.deduplicated})
                 if persistence_source == "prefer":
@@ -193,6 +195,7 @@ async def search_documents(
     published_after: str | None = None,
     published_before: str | None = None,
     limit: int = 20,
+    user_id: int | None = None,
 ) -> ServiceResult:
     try:
         results = await asyncio.to_thread(
@@ -202,6 +205,7 @@ async def search_documents(
             published_after=published_after,
             published_before=published_before,
             limit=limit,
+            user_id=user_id,
         )
         return ServiceResult(0, "ok", results, {"count": len(results)})
     except StorageError as exc:
@@ -216,6 +220,7 @@ async def list_documents(
     sitename: str | None = None,
     tags: str | None = None,
     content: str | None = None,
+    user_id: int | None = None,
 ) -> ServiceResult:
     try:
         rows, total = await asyncio.to_thread(
@@ -226,6 +231,7 @@ async def list_documents(
             sitename=sitename,
             tags=tags,
             content=content,
+            user_id=user_id,
         )
         return ServiceResult(
             0,
@@ -237,9 +243,9 @@ async def list_documents(
         return ServiceResult(4002, str(exc), meta={"storage_available": store.available}, status_code=503)
 
 
-async def get_document(document_id: int) -> ServiceResult:
+async def get_document(document_id: int, user_id: int | None = None) -> ServiceResult:
     try:
-        document = await asyncio.to_thread(store.get_document, document_id)
+        document = await asyncio.to_thread(store.get_document, document_id, user_id)
         if document is None:
             return ServiceResult(4041, "document not found", status_code=404)
         return ServiceResult(0, "ok", document)

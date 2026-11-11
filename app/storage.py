@@ -24,6 +24,14 @@ def normalize_route_hostname(hostname: str) -> str:
     return hostname.strip().lower().removeprefix("www.")
 
 
+def _inserted_id(cursor: sqlite3.Cursor) -> int:
+    """Narrow sqlite3's ``lastrowid`` (typed int | None) to a concrete int."""
+    row_id = cursor.lastrowid
+    if row_id is None:
+        raise StorageError("database insert did not return a row id")
+    return int(row_id)
+
+
 @dataclass(frozen=True)
 class StorageResult:
     document_id: int
@@ -55,6 +63,16 @@ class DocumentStore:
             if self.dictionary_path.is_file() and self.dictionary_path.stat().st_size:
                 jieba.load_userdict(str(self.dictionary_path))
             with self._connect() as connection:
+                # Legacy databases predate the user_id columns. The column must
+                # exist before the schema script runs, because that script creates
+                # indexes on fetches(user_id) / api_keys(user_id) which would fail
+                # against an old table that CREATE TABLE IF NOT EXISTS skips.
+                fetch_columns = {row[1] for row in connection.execute("PRAGMA table_info(fetches)")}
+                if fetch_columns and "user_id" not in fetch_columns:
+                    connection.execute("ALTER TABLE fetches ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE SET NULL")
+                key_columns = {row[1] for row in connection.execute("PRAGMA table_info(api_keys)")}
+                if key_columns and "user_id" not in key_columns:
+                    connection.execute("ALTER TABLE api_keys ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE")
                 connection.executescript(self.schema_path.read_text(encoding="utf-8"))
                 columns = {row[1] for row in connection.execute("PRAGMA table_info(api_keys)")}
                 if "key_suffix" not in columns:
@@ -83,6 +101,136 @@ class DocumentStore:
         with self._connect() as connection:
             connection.execute("DELETE FROM app_settings WHERE name = ?", (name,))
 
+    # -- Users ---------------------------------------------------------------
+
+    def create_user(self, *, email: str, password_hash: str, display_name: str | None, role: str = "user", status: str = "active") -> dict[str, Any]:
+        self._require_available()
+        normalized = email.strip().lower()
+        now = datetime.now(UTC).isoformat()
+        try:
+            with self._connect() as connection:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO users (email, password_hash, display_name, role, status, plan, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, 'free', ?, ?)
+                    """,
+                    (normalized, password_hash, display_name, role, status, now, now),
+                )
+                return self.get_user(int(cursor.lastrowid))  # type: ignore[return-value]
+        except sqlite3.IntegrityError as exc:
+            raise StorageError("email already registered") from exc
+        except sqlite3.Error as exc:
+            raise StorageError(f"user creation failed: {str(exc)[:180]}") from exc
+
+    def get_user(self, user_id: int) -> dict[str, Any] | None:
+        self._require_available()
+        with self._connect() as connection:
+            row = connection.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        return self._user_view(row) if row else None
+
+    def get_user_by_email(self, email: str) -> dict[str, Any] | None:
+        self._require_available()
+        with self._connect() as connection:
+            row = connection.execute("SELECT * FROM users WHERE email = ?", (email.strip().lower(),)).fetchone()
+        return self._user_view(row) if row else None
+
+    def list_users(self) -> list[dict[str, Any]]:
+        self._require_available()
+        with self._connect() as connection:
+            rows = connection.execute("SELECT * FROM users ORDER BY id ASC").fetchall()
+        return [self._user_view(row) for row in rows]
+
+    def update_user_status(self, user_id: int, status: str) -> bool:
+        self._require_available()
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as connection:
+            cursor = connection.execute("UPDATE users SET status = ?, updated_at = ? WHERE id = ?", (status, now, user_id))
+            return cursor.rowcount == 1
+
+    def update_user_role(self, user_id: int, role: str) -> bool:
+        self._require_available()
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as connection:
+            cursor = connection.execute("UPDATE users SET role = ?, updated_at = ? WHERE id = ?", (role, now, user_id))
+            return cursor.rowcount == 1
+
+    def touch_user_login(self, user_id: int) -> None:
+        self._require_available()
+        with self._connect() as connection:
+            connection.execute("UPDATE users SET last_login_at = ? WHERE id = ?", (datetime.now(UTC).isoformat(), user_id))
+
+    def count_users(self) -> int:
+        self._require_available()
+        with self._connect() as connection:
+            return int(connection.execute("SELECT COUNT(*) FROM users").fetchone()[0])
+
+    @staticmethod
+    def _user_view(row: sqlite3.Row) -> dict[str, Any]:
+        data = dict(row)
+        data.pop("password_hash", None)
+        return data
+
+    # -- Sessions ------------------------------------------------------------
+
+    def create_session(self, *, user_id: int, token_hash: str, expires_at: str, user_agent: str | None, ip_address: str | None) -> None:
+        self._require_available()
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO sessions (token_hash, user_id, created_at, expires_at, user_agent, ip_address) VALUES (?, ?, ?, ?, ?, ?)",
+                (token_hash, user_id, now, expires_at, user_agent, ip_address),
+            )
+
+    def get_session(self, token_hash: str) -> dict[str, Any] | None:
+        self._require_available()
+        with self._connect() as connection:
+            row = connection.execute("SELECT * FROM sessions WHERE token_hash = ?", (token_hash,)).fetchone()
+        if not row:
+            return None
+        if row["revoked_at"] is not None or row["expires_at"] <= datetime.now(UTC).isoformat():
+            return None
+        return dict(row)
+
+    def revoke_session(self, token_hash: str) -> bool:
+        self._require_available()
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "UPDATE sessions SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL",
+                (datetime.now(UTC).isoformat(), token_hash),
+            )
+            return cursor.rowcount == 1
+
+    def purge_expired_sessions(self) -> None:
+        self._require_available()
+        with self._connect() as connection:
+            connection.execute("DELETE FROM sessions WHERE expires_at <= ? OR revoked_at IS NOT NULL", (datetime.now(UTC).isoformat(),))
+
+    # -- Document ownership --------------------------------------------------
+
+    def link_document_owner(self, *, document_id: int, user_id: int) -> None:
+        self._require_available()
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT OR IGNORE INTO document_owners (document_id, user_id, first_seen_at) VALUES (?, ?, ?)",
+                (document_id, user_id, now),
+            )
+
+    def document_owner_ids(self, document_id: int) -> list[int]:
+        self._require_available()
+        with self._connect() as connection:
+            rows = connection.execute("SELECT user_id FROM document_owners WHERE document_id = ?", (document_id,)).fetchall()
+        return [int(row["user_id"]) for row in rows]
+
+    def user_owns_document(self, *, document_id: int, user_id: int) -> bool:
+        self._require_available()
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT 1 FROM document_owners WHERE document_id = ? AND user_id = ?",
+                (document_id, user_id),
+            ).fetchone()
+        return row is not None
+
     def persist(
         self,
         *,
@@ -95,6 +243,7 @@ class DocumentStore:
         content_type: str | None,
         attempts: list[dict[str, Any]],
         raw_response: dict[str, Any],
+        user_id: int | None = None,
     ) -> StorageResult:
         self._require_available()
         normalized_hash_source = unicodedata.normalize("NFKC", content).replace("\r\n", "\n").strip()
@@ -143,7 +292,7 @@ class DocumentStore:
                             now,
                         ),
                     )
-                    document_id = int(cursor.lastrowid)
+                    document_id = _inserted_id(cursor)
                     deduplicated = False
 
                 connection.execute(
@@ -166,11 +315,16 @@ class DocumentStore:
                 )
                 connection.execute(
                     """
-                    INSERT INTO fetches (document_id, requested_url, final_url, strategy, status_code, content_type, attempts_json, fetched_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO fetches (document_id, user_id, requested_url, final_url, strategy, status_code, content_type, attempts_json, fetched_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (document_id, requested_url, final_url, strategy, status_code, content_type, self._json(attempts), now),
+                    (document_id, user_id, requested_url, final_url, strategy, status_code, content_type, self._json(attempts), now),
                 )
+                if user_id is not None:
+                    connection.execute(
+                        "INSERT OR IGNORE INTO document_owners (document_id, user_id, first_seen_at) VALUES (?, ?, ?)",
+                        (document_id, user_id, now),
+                    )
         except sqlite3.Error as exc:
             raise StorageError(f"database write failed: {str(exc)[:180]}") from exc
         return StorageResult(document_id=document_id, deduplicated=deduplicated)
@@ -183,36 +337,38 @@ class DocumentStore:
         published_after: str | None,
         published_before: str | None,
         limit: int,
+        user_id: int | None = None,
     ) -> list[dict[str, Any]]:
         self._require_available()
         match_query = self._fts_prefix_query(query)
         if not match_query:
             return []
-        filters: list[str] = ["documents_fts MATCH ?"]
-        params: list[Any] = [match_query]
-        if hostname:
-            filters.append("d.hostname = ?")
-            params.append(hostname)
-        if published_after:
-            filters.append("d.published_at >= ?")
-            params.append(published_after)
-        if published_before:
-            filters.append("d.published_at <= ?")
-            params.append(published_before)
-        params.append(limit)
-        sql = f"""
-            SELECT d.id, d.title, d.url, d.canonical_url, d.hostname, d.published_at,
-                   bm25(documents_fts, 5.0, 2.0, 3.0, 1.0) AS score,
-                   snippet(documents_fts, 3, '<mark>', '</mark>', '…', 40) AS snippet
-            FROM documents_fts
-            JOIN documents d ON d.id = documents_fts.rowid
-            WHERE {' AND '.join(filters)}
-            ORDER BY score
-            LIMIT ?
-        """
+        # All optional filters use the ``(? IS NULL OR col = ?)`` idiom so the SQL is a
+        # static literal and every value is a bound parameter (user_id included).
+        params: list[Any] = [
+            match_query,
+            hostname, hostname,
+            published_after, published_after,
+            published_before, published_before,
+            user_id, user_id,
+            limit,
+        ]
         try:
             with self._connect() as connection:
-                rows = connection.execute(sql, params).fetchall()
+                rows = connection.execute(
+                    "SELECT d.id, d.title, d.url, d.canonical_url, d.hostname, d.published_at, "
+                    "bm25(documents_fts, 5.0, 2.0, 3.0, 1.0) AS score, "
+                    "snippet(documents_fts, 3, '<mark>', '</mark>', '…', 40) AS snippet "
+                    "FROM documents_fts "
+                    "JOIN documents d ON d.id = documents_fts.rowid "
+                    "WHERE documents_fts MATCH ? "
+                    "AND (? IS NULL OR d.hostname = ?) "
+                    "AND (? IS NULL OR d.published_at >= ?) "
+                    "AND (? IS NULL OR d.published_at <= ?) "
+                    "AND (? IS NULL OR d.id IN (SELECT document_id FROM document_owners WHERE user_id = ?)) "
+                    "ORDER BY score LIMIT ?",
+                    [*params],
+                ).fetchall()
         except sqlite3.Error as exc:
             raise StorageError(f"database search failed: {str(exc)[:180]}") from exc
         return [dict(row) for row in rows]
@@ -226,42 +382,61 @@ class DocumentStore:
         sitename: str | None = None,
         tags: str | None = None,
         content: str | None = None,
+        user_id: int | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
         self._require_available()
-        filters: list[str] = []
-        params: list[Any] = []
-        for column, value in (("d.title", title), ("d.site_name", sitename), ("d.tags_json", tags)):
-            if value:
-                filters.append(f"{column} LIKE ?")
-                params.append(f"%{value}%")
-        if content:
-            filters.append("(d.title LIKE ? OR d.content LIKE ?)")
-            params.extend([f"%{content}%", f"%{content}%"])
-        where = f"WHERE {' AND '.join(filters)}" if filters else ""
+        title_like = f"%{title}%" if title else None
+        sitename_like = f"%{sitename}%" if sitename else None
+        tags_like = f"%{tags}%" if tags else None
+        content_like = f"%{content}%" if content else None
+        # Static SQL literals; every filter (and the user_id scope) is a bound parameter
+        # via the ``(? IS NULL OR ...)`` idiom.
+        params: list[Any] = [
+            title, title_like,
+            sitename, sitename_like,
+            tags, tags_like,
+            content, content_like, content_like,
+            user_id, user_id,
+        ]
         offset = (page - 1) * page_size
         try:
             with self._connect() as connection:
-                total = connection.execute(f"SELECT COUNT(*) FROM documents d {where}", params).fetchone()[0]
+                total = connection.execute(
+                    "SELECT COUNT(*) FROM documents d "
+                    "WHERE (? IS NULL OR d.title LIKE ?) "
+                    "AND (? IS NULL OR d.site_name LIKE ?) "
+                    "AND (? IS NULL OR d.tags_json LIKE ?) "
+                    "AND (? IS NULL OR d.title LIKE ? OR d.content LIKE ?) "
+                    "AND (? IS NULL OR d.id IN (SELECT document_id FROM document_owners WHERE user_id = ?))",
+                    [*params],
+                ).fetchone()[0]
                 rows = connection.execute(
-                    f"""
-                    SELECT d.id, d.title, d.url, d.site_name, d.hostname, d.published_at,
-                           d.updated_at, (SELECT MAX(fetched_at) FROM fetches f WHERE f.document_id = d.id) AS fetched_at
-                    FROM documents d {where}
-                    ORDER BY fetched_at DESC, d.id DESC
-                    LIMIT ? OFFSET ?
-                    """,
+                    "SELECT d.id, d.title, d.url, d.site_name, d.hostname, d.published_at, "
+                    "d.updated_at, (SELECT MAX(fetched_at) FROM fetches f WHERE f.document_id = d.id) AS fetched_at "
+                    "FROM documents d "
+                    "WHERE (? IS NULL OR d.title LIKE ?) "
+                    "AND (? IS NULL OR d.site_name LIKE ?) "
+                    "AND (? IS NULL OR d.tags_json LIKE ?) "
+                    "AND (? IS NULL OR d.title LIKE ? OR d.content LIKE ?) "
+                    "AND (? IS NULL OR d.id IN (SELECT document_id FROM document_owners WHERE user_id = ?)) "
+                    "ORDER BY fetched_at DESC, d.id DESC LIMIT ? OFFSET ?",
                     [*params, page_size, offset],
                 ).fetchall()
         except sqlite3.Error as exc:
             raise StorageError(f"document listing failed: {str(exc)[:180]}") from exc
         return [dict(row) for row in rows], int(total)
 
-    def get_document(self, document_id: int) -> dict[str, Any] | None:
+    def get_document(self, document_id: int, user_id: int | None = None) -> dict[str, Any] | None:
         self._require_available()
         try:
             with self._connect() as connection:
                 row = connection.execute("SELECT * FROM documents WHERE id = ?", (document_id,)).fetchone()
                 if not row:
+                    return None
+                if user_id is not None and not connection.execute(
+                    "SELECT 1 FROM document_owners WHERE document_id = ? AND user_id = ?",
+                    (document_id, user_id),
+                ).fetchone():
                     return None
                 result = dict(row)
                 result["tags"] = json.loads(result.pop("tags_json"))
@@ -275,16 +450,22 @@ class DocumentStore:
         except (sqlite3.Error, ValueError) as exc:
             raise StorageError(f"document lookup failed: {str(exc)[:180]}") from exc
 
-    def delete_document(self, document_id: int) -> bool:
+    def delete_document(self, document_id: int, user_id: int | None = None) -> bool:
         self._require_available()
         try:
             with self._connect() as connection:
-                cursor = connection.execute("DELETE FROM documents WHERE id = ?", (document_id,))
+                if user_id is not None:
+                    cursor = connection.execute(
+                        "DELETE FROM documents WHERE id = ? AND id IN (SELECT document_id FROM document_owners WHERE user_id = ?)",
+                        (document_id, user_id),
+                    )
+                else:
+                    cursor = connection.execute("DELETE FROM documents WHERE id = ?", (document_id,))
                 return cursor.rowcount == 1
         except sqlite3.Error as exc:
             raise StorageError(f"document deletion failed: {str(exc)[:180]}") from exc
 
-    def create_api_key(self, *, name: str, scopes: list[str], expires_at: str | None, pepper: str) -> tuple[str, dict[str, Any]]:
+    def create_api_key(self, *, user_id: int | None, name: str, scopes: list[str], expires_at: str | None, pepper: str) -> tuple[str, dict[str, Any]]:
         self._require_available()
         token = "oma_" + secrets.token_urlsafe(32)
         prefix = token[:16]
@@ -294,15 +475,15 @@ class DocumentStore:
             with self._connect() as connection:
                 cursor = connection.execute(
                     """
-                    INSERT INTO api_keys (name, key_prefix, key_suffix, secret_hmac, scopes_json, created_at, expires_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO api_keys (user_id, name, key_prefix, key_suffix, secret_hmac, scopes_json, created_at, expires_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (name, prefix, token[-4:], digest, self._json(scopes), now, expires_at),
+                    (user_id, name, prefix, token[-4:], digest, self._json(scopes), now, expires_at),
                 )
-                key_id = int(cursor.lastrowid)
+                key_id = _inserted_id(cursor)
         except sqlite3.Error as exc:
             raise StorageError(f"api key creation failed: {str(exc)[:180]}") from exc
-        return token, {"id": key_id, "name": name, "key_prefix": prefix, "key_suffix": token[-4:], "scopes": scopes, "created_at": now, "expires_at": expires_at}
+        return token, {"id": key_id, "user_id": user_id, "name": name, "key_prefix": prefix, "key_suffix": token[-4:], "scopes": scopes, "created_at": now, "expires_at": expires_at}
 
     def authenticate_key(self, token: str, pepper: str) -> sqlite3.Row | None:
         self._require_available()
@@ -325,13 +506,21 @@ class DocumentStore:
         except sqlite3.Error as exc:
             raise StorageError(f"api key authentication failed: {str(exc)[:180]}") from exc
 
-    def list_api_keys(self) -> list[dict[str, Any]]:
+    def list_api_keys(self, user_id: int | None = None) -> list[dict[str, Any]]:
         self._require_available()
         try:
             with self._connect() as connection:
-                rows = connection.execute(
-                    "SELECT id, name, key_prefix, key_suffix, scopes_json, created_at, expires_at, revoked_at, last_used_at FROM api_keys ORDER BY id DESC"
-                ).fetchall()
+                if user_id is not None:
+                    rows = connection.execute(
+                        "SELECT id, name, key_prefix, key_suffix, scopes_json, created_at, expires_at, revoked_at, last_used_at "
+                        "FROM api_keys WHERE user_id = ? ORDER BY id DESC",
+                        (user_id,),
+                    ).fetchall()
+                else:
+                    rows = connection.execute(
+                        "SELECT id, name, key_prefix, key_suffix, scopes_json, created_at, expires_at, revoked_at, last_used_at "
+                        "FROM api_keys ORDER BY id DESC"
+                    ).fetchall()
         except sqlite3.Error as exc:
             raise StorageError(f"api key listing failed: {str(exc)[:180]}") from exc
         result: list[dict[str, Any]] = []
@@ -341,14 +530,14 @@ class DocumentStore:
             result.append(item)
         return result
 
-    def delete_api_key(self, key_id: int) -> bool:
+    def delete_api_key(self, key_id: int, user_id: int | None = None) -> bool:
         self._require_available()
         try:
             with self._connect() as connection:
-                cursor = connection.execute(
-                    "DELETE FROM api_keys WHERE id = ?",
-                    (key_id,),
-                )
+                if user_id is not None:
+                    cursor = connection.execute("DELETE FROM api_keys WHERE id = ? AND user_id = ?", (key_id, user_id))
+                else:
+                    cursor = connection.execute("DELETE FROM api_keys WHERE id = ?", (key_id,))
                 return cursor.rowcount == 1
         except sqlite3.Error as exc:
             raise StorageError(f"api key revoke failed: {str(exc)[:180]}") from exc

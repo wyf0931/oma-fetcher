@@ -18,16 +18,35 @@ Interactive OpenAPI documentation is available at `/docs` (and `/redoc`) when
 ## Authentication
 
 Authentication is opt-in. When `API_AUTH_ENABLED=on`, every `/api/*` endpoint
-requires:
+requires either a signed-in session cookie or:
 
 ```http
-Authorization: Bearer <token>
+Authorization: Bearer <api-key>
 ```
 
 Health probes (`/livez`, `/readyz`, `/healthz`, `/health`) remain anonymous.
-Scopes are `fetch`, `search`, and `admin`; a request without the required scope
-receives HTTP `403`. The environment `API_ADMIN_KEY` is an administrator token
-and can call every endpoint. Client keys are created through `/api/keys`.
+Each API key belongs to a user; scopes are `fetch`, `search`, and `admin`, and a
+request without the required scope receives HTTP `403`. Administrative actions
+and access to all users' data are granted by the caller's role
+(`users.role == 'admin'`), not by any environment token. Client API keys are
+created through `/api/keys`, and each key is bound to the user who created it.
+
+Web sessions are established with a cookie (`SESSION_COOKIE_NAME`) that is
+HttpOnly, `SameSite=Lax`, and `Secure` in production. Programmatic callers use a
+Bearer API key instead.
+
+### User accounts and authentication endpoints
+
+Registration is open. These endpoints manage accounts and sessions:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /api/auth/register` | Create a new user account. |
+| `POST /api/auth/login` | Sign in and receive a session cookie. |
+| `POST /api/auth/logout` | End the current session. |
+| `GET /api/auth/me` | Return the signed-in user. |
+| `GET /api/admin/users` | List users (admin only). |
+| `PATCH /api/admin/users/{id}` | Update a user, such as changing its role (admin only). |
 
 ## `POST /api/fetch`
 
@@ -306,13 +325,16 @@ invalidates it.
 
 ```sh
 curl -sS -X POST 'http://127.0.0.1:7890/api/keys' \
-  -H "Authorization: Bearer $API_ADMIN_KEY" \
+  -H "Authorization: Bearer $OMA_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"name":"research-agent","scopes":["fetch","search"]}' | jq
 
 curl -sS 'http://127.0.0.1:7890/api/keys' \
-  -H "Authorization: Bearer $API_ADMIN_KEY" | jq
+  -H "Authorization: Bearer $OMA_API_KEY" | jq
 ```
+
+`$OMA_API_KEY` is a regular user's API key; it manages that user's own keys and
+reaches only that user's documents and fetches.
 
 ## Health endpoints
 

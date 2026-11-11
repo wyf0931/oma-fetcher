@@ -220,7 +220,10 @@ stdio 配置、认证方式和完整工具契约见 [MCP 服务器](docs/mcp.md)
 | `FETCH_ROUTE_TTL_HOURS` | `168` | 按主机名和目标类型的路由缓存时长。 |
 | `PROXY_ENABLED` / `PROXY_URL` | `off` / 空 | 让所有策略走代理。 |
 | `API_AUTH_ENABLED` | `off` | 要求 `/api/*` 使用 Bearer 认证。 |
-| `API_ADMIN_KEY` / `API_KEY_PEPPER` | 空 | 管理员令牌与 Key 哈希 Pepper。 |
+| `API_KEY_PEPPER` | 空 | 客户端 Key 的 HMAC 服务端 Pepper。 |
+| `SESSION_TTL_HOURS` / `SESSION_COOKIE_NAME` | `168` / `oma_session` | Web 会话有效期与 Cookie 名称。 |
+| `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` | 空 | users 表为空时启动创建首个 admin。 |
+| `DEBUG` | `off` | 去掉 session cookie 的 `Secure` 标志，便于本地 HTTP 调试。 |
 | `API_DOCS_ENABLED` | `true` | 提供 `/docs` 和 `/redoc`。 |
 
 全部变量、持久化优先级、代理覆盖和认证配置见

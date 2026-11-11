@@ -1,3 +1,20 @@
+-- Users must be defined first: fetches, api_keys, sessions, and document_owners
+-- all carry a user_id foreign key pointing at this table.
+CREATE TABLE IF NOT EXISTS users (
+    id              INTEGER PRIMARY KEY,
+    email           TEXT NOT NULL UNIQUE,
+    password_hash   TEXT NOT NULL,
+    display_name    TEXT,
+    role            TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('admin', 'user')),
+    status          TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'pending', 'disabled')),
+    plan            TEXT NOT NULL DEFAULT 'free',
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    last_login_at   TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+
 CREATE TABLE IF NOT EXISTS documents (
     id              INTEGER PRIMARY KEY,
     url             TEXT NOT NULL,
@@ -19,6 +36,8 @@ CREATE TABLE IF NOT EXISTS documents (
     updated_at      TEXT NOT NULL
 );
 
+-- Ownerless documents (imported before user accounts existed) keep user_id NULL and
+-- are only visible to administrators. New rows are always scoped to a user.
 CREATE INDEX IF NOT EXISTS idx_documents_hostname ON documents(hostname);
 CREATE INDEX IF NOT EXISTS idx_documents_published_at ON documents(published_at);
 CREATE INDEX IF NOT EXISTS idx_documents_canonical_url ON documents(canonical_url);
@@ -27,6 +46,7 @@ CREATE INDEX IF NOT EXISTS idx_documents_site_name ON documents(site_name);
 CREATE TABLE IF NOT EXISTS fetches (
     id              INTEGER PRIMARY KEY,
     document_id     INTEGER NOT NULL,
+    user_id         INTEGER,
     requested_url   TEXT NOT NULL,
     final_url       TEXT,
     strategy        TEXT NOT NULL,
@@ -34,14 +54,17 @@ CREATE TABLE IF NOT EXISTS fetches (
     content_type    TEXT,
     attempts_json   TEXT NOT NULL,
     fetched_at      TEXT NOT NULL,
-    FOREIGN KEY(document_id) REFERENCES documents(id) ON DELETE CASCADE
+    FOREIGN KEY(document_id) REFERENCES documents(id) ON DELETE CASCADE,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_fetches_document ON fetches(document_id);
 CREATE INDEX IF NOT EXISTS idx_fetches_fetched_at ON fetches(fetched_at);
+CREATE INDEX IF NOT EXISTS idx_fetches_user ON fetches(user_id);
 
 CREATE TABLE IF NOT EXISTS api_keys (
     id              INTEGER PRIMARY KEY,
+    user_id         INTEGER,
     name            TEXT NOT NULL,
     key_prefix      TEXT NOT NULL UNIQUE,
     key_suffix      TEXT,
@@ -50,10 +73,39 @@ CREATE TABLE IF NOT EXISTS api_keys (
     created_at      TEXT NOT NULL,
     expires_at      TEXT,
     revoked_at      TEXT,
-    last_used_at    TEXT
+    last_used_at    TEXT,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_api_keys_active ON api_keys(revoked_at, expires_at);
+CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    id              INTEGER PRIMARY KEY,
+    token_hash      TEXT NOT NULL UNIQUE,
+    user_id         INTEGER NOT NULL,
+    created_at      TEXT NOT NULL,
+    expires_at      TEXT NOT NULL,
+    revoked_at      TEXT,
+    user_agent      TEXT,
+    ip_address      TEXT,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
+
+CREATE TABLE IF NOT EXISTS document_owners (
+    id              INTEGER PRIMARY KEY,
+    document_id     INTEGER NOT NULL,
+    user_id         INTEGER NOT NULL,
+    first_seen_at   TEXT NOT NULL,
+    FOREIGN KEY(document_id) REFERENCES documents(id) ON DELETE CASCADE,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE (document_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_document_owners_user ON document_owners(user_id);
 
 CREATE TABLE IF NOT EXISTS fetch_routes (
     hostname            TEXT NOT NULL,

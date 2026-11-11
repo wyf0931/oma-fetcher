@@ -221,7 +221,8 @@ def test_http_tools_enforce_scopes_from_request_headers(tmp_path: Path, monkeypa
     monkeypatch.setattr(main_module, "store", store)
     monkeypatch.setattr(settings, "api_auth_enabled", True)
     monkeypatch.setattr(settings, "api_key_pepper", "p" * 32)
-    token, _ = store.create_api_key(name="reader", scopes=["fetch"], expires_at=None, pepper=settings.api_key_pepper)
+    reader = store.create_user(email="reader@example.com", password_hash="h" * 60, display_name="Reader")
+    token, _ = store.create_api_key(user_id=reader["id"], name="reader", scopes=["fetch"], expires_at=None, pepper=settings.api_key_pepper)
 
     base_headers = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json", "Authorization": f"Bearer {token}"}
     with TestClient(app, base_url="http://127.0.0.1:7890") as client:

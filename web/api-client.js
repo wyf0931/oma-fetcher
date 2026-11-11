@@ -9,7 +9,8 @@ window.apiClient = (() => {
     if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
     const startedAt = performance.now();
     let response;
-    try { response = await fetch(`${baseUrl}${path}`, {...options, headers}); }
+    // credentials: 'include' sends the HttpOnly session cookie alongside any Bearer token.
+    try { response = await fetch(`${baseUrl}${path}`, {...options, headers, credentials: 'include'}); }
     catch (error) { throw new ApiError(error.message || 'Network request failed', 0, null); }
     const duration = Math.round(performance.now() - startedAt);
     let envelope; try { envelope = await response.json(); } catch { throw new ApiError(`HTTP ${response.status}`, response.status, null); }
@@ -21,5 +22,13 @@ window.apiClient = (() => {
   }
   const tokenStorageKey = 'oma_fetcher_key_tokens';
   const tokenCache = () => JSON.parse(localStorage.getItem(tokenStorageKey) || '{}');
-  return { request, hasKey: () => !!localStorage.getItem(storageKey), getKey: () => localStorage.getItem(storageKey), setKey: (key) => localStorage.setItem(storageKey, key.trim()), getToken: (id) => tokenCache()[id] || null, saveToken: (id, token) => { const cache = tokenCache(); cache[id] = token; localStorage.setItem(tokenStorageKey, JSON.stringify(cache)); }, removeToken: (id) => { const cache = tokenCache(); delete cache[id]; localStorage.setItem(tokenStorageKey, JSON.stringify(cache)); }, ApiError };
+  // Session (cookie) authentication endpoints. They rely on credentials: 'include'
+  // so the server-set HttpOnly session cookie is stored and replayed by the browser.
+  const auth = {
+    register: (payload) => request('/api/auth/register', {method: 'POST', body: JSON.stringify(payload)}),
+    login: (payload) => request('/api/auth/login', {method: 'POST', body: JSON.stringify(payload)}),
+    logout: () => request('/api/auth/logout', {method: 'POST'}),
+    me: () => request('/api/auth/me'),
+  };
+  return { request, auth, hasKey: () => !!localStorage.getItem(storageKey), getKey: () => localStorage.getItem(storageKey), setKey: (key) => localStorage.setItem(storageKey, key.trim()), getToken: (id) => tokenCache()[id] || null, saveToken: (id, token) => { const cache = tokenCache(); cache[id] = token; localStorage.setItem(tokenStorageKey, JSON.stringify(cache)); }, removeToken: (id) => { const cache = tokenCache(); delete cache[id]; localStorage.setItem(tokenStorageKey, JSON.stringify(cache)); }, ApiError };
 })();
