@@ -160,8 +160,9 @@ When `API_AUTH_ENABLED=on`, `/mcp` requires the same Bearer token as `/api/*`:
 ```
 
 The header name and value match the REST API exactly: `Authorization: Bearer
-<token>`. Use a client token created with `POST /api/keys`, or the environment
-`API_ADMIN_KEY`.
+<api-key>`. Use a client API key created with `POST /api/keys`. Each key is
+bound to the user who created it, so the tools reach only that user's documents
+and fetches; an admin user's key can see every user's data.
 
 Per-tool scopes match the REST endpoints:
 

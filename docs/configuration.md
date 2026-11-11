@@ -29,9 +29,12 @@ cp .env.example .env
 | `STORAGE_DB_PATH` | `data/research.db` | SQLite database path. Docker Compose uses `/data/research.db`. |
 | `STORAGE_USER_DICT_PATH` | `dictionaries/custom.txt` | Optional jieba user dictionary loaded at startup when non-empty. |
 | `FETCH_ROUTE_TTL_HOURS` | `168` | Cache a successful hostname + target-kind route for seven days. |
-| `API_AUTH_ENABLED` | `off` | Require Bearer authentication for all `/api/*` endpoints. |
-| `API_ADMIN_KEY` | empty | Environment-only administrator token. Required when auth is enabled; at least 32 characters. |
+| `API_AUTH_ENABLED` | `off` | Require a session cookie or Bearer API key for all `/api/*` endpoints. |
 | `API_KEY_PEPPER` | empty | Server-side pepper for client-key HMACs. Required when auth is enabled; at least 32 characters. |
+| `SESSION_TTL_HOURS` | `168` | Web-session lifetime in hours. |
+| `SESSION_COOKIE_NAME` | `oma_session` | Name of the HttpOnly session cookie. |
+| `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` | empty | Optional. When the users table is empty, startup creates the first admin account. |
+| `DEBUG` | `off` | When `on`, the session cookie drops the `Secure` flag for local HTTP debugging. |
 | `API_DOCS_ENABLED` | `true` | Serve interactive OpenAPI docs at `/docs` and `/redoc`. |
 | `WEB_CORS_ORIGINS` | `http://localhost:8080,http://127.0.0.1:8080` | Comma-separated allowed browser origins for the API. |
 | `FETCHLY_MCP_ALLOWED_HOSTS` | localhost only | Extra `Host` allowlist entries for `/mcp`, e.g. `example.com:*`. Localhost on any port is always allowed. |
@@ -97,8 +100,9 @@ requests:
 - **Clear proxy** saves an explicit direct-connection override.
 - **Use environment** removes the override and restores the `.env` baseline.
 
-With API authentication enabled, proxy settings require the administrator key.
-See the proxy settings endpoints in the
+With API authentication enabled, proxy settings require an admin account
+(`users.role == 'admin'`), signed in with a session or calling with that admin's
+API key. See the proxy settings endpoints in the
 [API Reference](api-reference.md#proxy-settings).
 
 To verify that traffic exits through the proxy, fetch an IP echo endpoint and
@@ -117,17 +121,26 @@ Enable authentication whenever the service is reachable beyond localhost:
 
 ```dotenv
 API_AUTH_ENABLED=on
-API_ADMIN_KEY=<at-least-32-random-characters>
-API_KEY_PEPPER=<different-at-least-32-random-secret>
+API_KEY_PEPPER=<at-least-32-random-characters>
+BOOTSTRAP_ADMIN_EMAIL=admin@example.com
+BOOTSTRAP_ADMIN_PASSWORD=<at-least-32-random-characters>
 ```
 
-When enabled, every `/api/*` endpoint requires
-`Authorization: Bearer <token>`. Health probes remain anonymous.
-`API_ADMIN_KEY` exists only in the environment. Client keys created through
-`POST /api/keys` are shown once and stored in SQLite only as HMACs.
+When enabled, every `/api/*` endpoint requires a signed-in session cookie or
+`Authorization: Bearer <api-key>`. Health probes remain anonymous.
 
-Treat a client token like a password: it cannot be recovered after the create
-response. Do not put keys in query strings or commit them to `.env`.
+There is no environment administrator token: admin permission is granted by a
+user's role (`users.role == 'admin'`), never by a shared secret. With
+`BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` set and an empty users
+table, the first admin account is created at startup. Each API key created
+through `POST /api/keys` is bound to the user who created it, is shown once, and
+is stored in SQLite only as an HMAC.
+
+Web sessions use an HttpOnly, `SameSite=Lax` cookie (`SESSION_COOKIE_NAME`,
+`SESSION_TTL_HOURS`); in production it is `Secure`, and `DEBUG=on` drops that
+flag for local HTTP debugging. Treat a client API key like a password: it cannot
+be recovered after the create response. Do not put keys in query strings or
+commit them to `.env`.
 
 ## CORS and API docs
 

@@ -226,7 +226,10 @@ Copy `.env.example` to `.env` and set only what you need. Common options:
 | `FETCH_ROUTE_TTL_HOURS` | `168` | Route-cache TTL per hostname and target kind. |
 | `PROXY_ENABLED` / `PROXY_URL` | `off` / empty | Route all strategies through a proxy. |
 | `API_AUTH_ENABLED` | `off` | Require Bearer tokens for `/api/*`. |
-| `API_ADMIN_KEY` / `API_KEY_PEPPER` | empty | Administrator token and key-hash pepper. |
+| `API_KEY_PEPPER` | empty | Server-side pepper for client-key HMACs. |
+| `SESSION_TTL_HOURS` / `SESSION_COOKIE_NAME` | `168` / `oma_session` | Web-session lifetime and cookie name. |
+| `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` | empty | Create the first admin on startup when the users table is empty. |
+| `DEBUG` | `off` | Drop the `Secure` flag from the session cookie for local HTTP debugging. |
 | `API_DOCS_ENABLED` | `true` | Serve `/docs` and `/redoc`. |
 
 See [Configuration](docs/configuration.md) for every variable, persistence

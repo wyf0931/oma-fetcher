@@ -193,7 +193,9 @@ Interactive OpenAPI documentation is available at `/docs` when
 ## Security checklist
 
 - Set `API_AUTH_ENABLED=on` for any deployment reachable beyond localhost.
-- Keep `API_ADMIN_KEY` and `API_KEY_PEPPER` out of source control.
+- Keep `API_KEY_PEPPER` out of source control.
+- Set `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` to create the first
+  admin account, then remove the password from `.env` once the account exists.
 - Leave `FETCHER_ALLOW_PRIVATE_NETWORKS=false` unless the deployment must read
   private hosts.
 - Keep `FETCHER_ENFORCE_ROBOTS=true` unless you have a specific, reviewed reason.
