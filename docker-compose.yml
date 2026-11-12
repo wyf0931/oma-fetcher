@@ -23,6 +23,15 @@ services:
       DEBUG: ${DEBUG:-off}
       API_DOCS_ENABLED: ${API_DOCS_ENABLED:-true}
       WEB_CORS_ORIGINS: ${WEB_CORS_ORIGINS:-}
+      # Alipay Vibe Pay (web page.pay). Left empty until credentials are added
+      # to .env; an empty app_id keeps the billing routes available but payments
+      # disabled, so existing deployments are unaffected.
+      ALIPAY_APP_ID: ${ALIPAY_APP_ID:-}
+      ALIPAY_GATEWAY: ${ALIPAY_GATEWAY:-https://openapi.alipay.com/gateway.do}
+      ALIPAY_MERCHANT_PRIVATE_KEY: ${ALIPAY_MERCHANT_PRIVATE_KEY:-}
+      ALIPAY_ALIPAY_PUBLIC_KEY: ${ALIPAY_ALIPAY_PUBLIC_KEY:-}
+      ALIPAY_NOTIFY_URL: ${ALIPAY_NOTIFY_URL:-}
+      ALIPAY_RETURN_URL: ${ALIPAY_RETURN_URL:-}
     volumes:
       - ./data:/data
       - ./dictionaries:/dictionaries:ro
