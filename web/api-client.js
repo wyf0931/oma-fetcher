@@ -3,6 +3,9 @@ window.apiClient = (() => {
   const baseUrl = (window.OMA_FETCHER_API_BASE || window.location.origin || 'http://127.0.0.1:7890').replace(/\/$/, '');
   class ApiError extends Error { constructor(message, status, envelope) { super(message); this.status = status; this.envelope = envelope; } }
   async function request(path, options = {}) {
+    // `authProbe` marks the "who am I" check: a 401 there means "logged out",
+    // not "missing API key", so it must not raise the global auth-required event.
+    const isAuthProbe = options.authProbe === true;
     const headers = new Headers(options.headers || {});
     const token = localStorage.getItem(storageKey);
     if (token) headers.set('Authorization', `Bearer ${token}`);
@@ -15,7 +18,7 @@ window.apiClient = (() => {
     const duration = Math.round(performance.now() - startedAt);
     let envelope; try { envelope = await response.json(); } catch { throw new ApiError(`HTTP ${response.status}`, response.status, null); }
     if (!response.ok || envelope.code !== 0) {
-      if (response.status === 401 || envelope.code === 1001) window.dispatchEvent(new Event('oma-auth-required'));
+      if (!isAuthProbe && (response.status === 401 || envelope.code === 1001)) window.dispatchEvent(new Event('oma-auth-required'));
       throw new ApiError(envelope.message || `HTTP ${response.status}`, response.status, envelope);
     }
     return {data: envelope.data, meta: envelope.meta, headers: response.headers, status: response.status, statusText: response.statusText, duration};
@@ -28,7 +31,7 @@ window.apiClient = (() => {
     register: (payload) => request('/api/auth/register', {method: 'POST', body: JSON.stringify(payload)}),
     login: (payload) => request('/api/auth/login', {method: 'POST', body: JSON.stringify(payload)}),
     logout: () => request('/api/auth/logout', {method: 'POST'}),
-    me: () => request('/api/auth/me'),
+    me: () => request('/api/auth/me', {authProbe: true}),
   };
   return { request, auth, hasKey: () => !!localStorage.getItem(storageKey), getKey: () => localStorage.getItem(storageKey), setKey: (key) => localStorage.setItem(storageKey, key.trim()), getToken: (id) => tokenCache()[id] || null, saveToken: (id, token) => { const cache = tokenCache(); cache[id] = token; localStorage.setItem(tokenStorageKey, JSON.stringify(cache)); }, removeToken: (id) => { const cache = tokenCache(); delete cache[id]; localStorage.setItem(tokenStorageKey, JSON.stringify(cache)); }, ApiError };
 })();

@@ -123,6 +123,104 @@ CREATE TABLE IF NOT EXISTS fetch_routes (
 
 CREATE INDEX IF NOT EXISTS idx_fetch_routes_expires_at ON fetch_routes(expires_at);
 
+-- ---------------------------------------------------------------------------
+-- Billing: SKU -> order -> payment -> credit ledger
+--
+-- Domain model for pay-as-you-go credit packs. A purchase flow is:
+--   sku  ->  order (pending)  ->  payment (alipay page.pay)  ->  paid
+--        ->  credit_ledger grant (+units), then fetches decrement via ledger entries.
+-- Amounts are stored in cents (INTEGER) to avoid float drift; the Alipay API
+-- takes yuan with two decimals, converted at the boundary.
+-- ---------------------------------------------------------------------------
+
+-- SKU catalog. Only one pay-as-you-go pack is seeded today, but the table keeps
+-- the catalog extensible (tiered packs, different unit prices) without a migration.
+CREATE TABLE IF NOT EXISTS skus (
+    id              INTEGER PRIMARY KEY,
+    code            TEXT NOT NULL UNIQUE,
+    name            TEXT NOT NULL,
+    unit            TEXT NOT NULL DEFAULT 'fetch',
+    units           INTEGER NOT NULL CHECK (units > 0),
+    price_cents     INTEGER NOT NULL CHECK (price_cents > 0),
+    currency        TEXT NOT NULL DEFAULT 'CNY',
+    payment_provider TEXT NOT NULL DEFAULT 'alipay',
+    active          INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    sort_order      INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+
+-- Orders. One order = one intent to buy a SKU quantity. An idempotency key lets
+-- the client retry order creation safely; the out_trade_no we send to Alipay is
+-- derived from the order and globally unique per merchant.
+CREATE TABLE IF NOT EXISTS orders (
+    id              INTEGER PRIMARY KEY,
+    user_id         INTEGER NOT NULL,
+    sku_id          INTEGER NOT NULL,
+    quantity        INTEGER NOT NULL CHECK (quantity > 0),
+    unit_price_cents INTEGER NOT NULL CHECK (unit_price_cents > 0),
+    amount_cents    INTEGER NOT NULL CHECK (amount_cents > 0),
+    currency        TEXT NOT NULL DEFAULT 'CNY',
+    status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'paid', 'closed', 'refunded', 'failed')),
+    out_trade_no    TEXT NOT NULL UNIQUE,
+    idempotency_key TEXT,
+    credits_granted INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    paid_at         TEXT,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY(sku_id) REFERENCES skus(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id);
+CREATE INDEX IF NOT EXISTS idx_orders_out_trade_no ON orders(out_trade_no);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_user_idem ON orders(user_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+
+-- Payment attempts / provider transactions for an order. Alipay may deliver
+-- multiple async notifies for the same trade; each is recorded once keyed by
+-- (provider, alipay trade_no, notify_id) so replays are idempotent.
+CREATE TABLE IF NOT EXISTS payments (
+    id              INTEGER PRIMARY KEY,
+    order_id        INTEGER NOT NULL,
+    provider        TEXT NOT NULL DEFAULT 'alipay',
+    provider_trade_no TEXT,
+    notify_id       TEXT,
+    trade_status    TEXT,
+    amount_cents    INTEGER NOT NULL,
+    currency        TEXT NOT NULL DEFAULT 'CNY',
+    raw_json        TEXT NOT NULL,
+    verified        INTEGER NOT NULL DEFAULT 0 CHECK (verified IN (0, 1)),
+    created_at      TEXT NOT NULL,
+    FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE CASCADE
+);
+
+-- A given provider trade should only ever drive one transition per notify id.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_provider_notify ON payments(provider, provider_trade_no, notify_id) WHERE notify_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_payments_order ON payments(order_id);
+
+-- Append-only credit ledger: +units granted on a paid order, -units consumed by
+-- a fetch. The user balance is SUM(delta); the ledger doubles as the audit log.
+CREATE TABLE IF NOT EXISTS credit_ledger (
+    id              INTEGER PRIMARY KEY,
+    user_id         INTEGER NOT NULL,
+    delta           INTEGER NOT NULL CHECK (delta != 0),
+    reason          TEXT NOT NULL CHECK (reason IN ('grant', 'consume', 'refund', 'adjustment')),
+    order_id        INTEGER,
+    fetch_id        INTEGER,
+    idempotency_key TEXT,
+    created_at      TEXT NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE SET NULL,
+    FOREIGN KEY(fetch_id) REFERENCES fetches(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_credit_ledger_user ON credit_ledger(user_id);
+CREATE INDEX IF NOT EXISTS idx_credit_ledger_order ON credit_ledger(order_id);
+-- One grant per paid order; one consumption per fetch.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_ledger_grant ON credit_ledger(order_id, reason) WHERE reason = 'grant' AND order_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_ledger_consume ON credit_ledger(fetch_id, reason) WHERE reason = 'consume' AND fetch_id IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS app_settings (
     name        TEXT PRIMARY KEY,
     value_json  TEXT NOT NULL,

@@ -38,6 +38,14 @@ class Settings:
     proxy_override: bool = False
     proxy_environment_enabled: bool = field(init=False)
     proxy_environment_url: str = field(init=False)
+    # Alipay Vibe Pay (web page.pay). Billing routes only activate when an app_id
+    # and both RSA2 keys are present, so dev/UAT without credentials is unaffected.
+    alipay_app_id: str = field(default_factory=lambda: os.getenv("ALIPAY_APP_ID", "").strip())
+    alipay_gateway: str = field(default_factory=lambda: os.getenv("ALIPAY_GATEWAY", "https://openapi.alipay.com/gateway.do").strip())
+    alipay_merchant_private_key: str = field(default_factory=lambda: os.getenv("ALIPAY_MERCHANT_PRIVATE_KEY", "").strip())
+    alipay_alipay_public_key: str = field(default_factory=lambda: os.getenv("ALIPAY_ALIPAY_PUBLIC_KEY", "").strip())
+    alipay_notify_url: str = field(default_factory=lambda: os.getenv("ALIPAY_NOTIFY_URL", "").strip())
+    alipay_return_url: str = field(default_factory=lambda: os.getenv("ALIPAY_RETURN_URL", "").strip())
 
     def __post_init__(self) -> None:
         self.proxy_environment_enabled = self.proxy_enabled
@@ -50,6 +58,8 @@ class Settings:
             raise ValueError("API_KEY_PEPPER must be at least 32 characters when API_AUTH_ENABLED=on")
         if self.session_ttl_hours < 1:
             raise ValueError("SESSION_TTL_HOURS must be at least 1")
+        if self.alipay_app_id and not (self.alipay_merchant_private_key and self.alipay_alipay_public_key):
+            raise ValueError("ALIPAY_MERCHANT_PRIVATE_KEY and ALIPAY_ALIPAY_PUBLIC_KEY are required when ALIPAY_APP_ID is set")
 
     @property
     def active_proxy_url(self) -> str | None:
@@ -93,6 +103,11 @@ class Settings:
             return
         self.proxy_enabled = bool(value.get("enabled"))
         self.proxy_url = str(value.get("url") or "")
+
+    @property
+    def alipay_enabled(self) -> bool:
+        """True when Alipay credentials are configured well enough to sell credits."""
+        return bool(self.alipay_app_id and self.alipay_merchant_private_key and self.alipay_alipay_public_key)
 
 
 settings = Settings()

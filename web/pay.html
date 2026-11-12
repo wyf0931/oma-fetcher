@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fetchly · Checkout</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" sizes="any" />
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script src="/vendor/lucide/lucide.min.js" defer></script>
+    <script src="/i18n.js"></script>
+    <script src="/api-client.js?v=3"></script>
+    <script src="/pay.js?v=1"></script>
+    <style>[x-cloak]{display:none!important}</style>
+  </head>
+  <body class="min-h-screen bg-base-200 text-base-content grid place-items-center px-4">
+    <div x-data="payPage()" x-init="init()" class="w-full max-w-md">
+      <div class="mb-6 flex items-center justify-center gap-3">
+        <div aria-hidden="true" class="grid size-10 place-items-center text-base-content"><i data-lucide="coffee" class="size-7"></i></div>
+        <span class="text-2xl font-semibold tracking-tight">Fetchly</span>
+      </div>
+
+      <div class="rounded-box border border-base-300 bg-base-100 p-6 shadow-sm sm:p-8">
+        <h1 class="text-xl font-semibold" x-text="$t('pay.title')">Checkout</h1>
+        <p class="mt-1 text-sm text-base-content/60" x-text="$t('pay.subtitle')"></p>
+
+        <!-- Not signed in -->
+        <template x-if="needsLogin">
+          <div class="mt-6 space-y-4">
+            <div class="alert alert-warning"><span x-text="$t('pay.signInFirst')"></span></div>
+            <a class="btn btn-primary w-full" :href="loginHref()" x-text="$t('account.signIn') || 'Sign in'">Sign in</a>
+          </div>
+        </template>
+
+        <!-- Signed in: checkout -->
+        <template x-if="!needsLogin">
+          <div class="mt-5 space-y-4">
+            <!-- SKU -->
+            <template x-if="sku">
+              <div class="flex items-center justify-between rounded-box border border-base-300 p-4">
+                <div>
+                  <div class="font-semibold" x-text="sku.name"></div>
+                  <div class="text-sm text-base-content/60" x-text="sku.units.toLocaleString() + ' ' + sku.unit"></div>
+                </div>
+                <div class="text-2xl font-bold">¥<span x-text="sku.price_yuan"></span></div>
+              </div>
+            </template>
+
+            <!-- Preparing -->
+            <template x-if="state === 'ready'">
+              <button class="btn btn-primary w-full" @click="startPayment()" :disabled="!sku">
+                <i data-lucide="wallet" class="size-4"></i>
+                <span x-text="$t('pay.payNow')"></span>
+              </button>
+            </template>
+
+            <!-- Redirecting to Alipay -->
+            <template x-if="state === 'redirecting'">
+              <div class="space-y-3">
+                <div class="flex items-center gap-2 text-sm text-base-content/70">
+                  <span class="loading loading-spinner loading-sm"></span>
+                  <span x-text="$t('pay.autoRedirect')"></span>
+                </div>
+                <div class="flex items-center gap-2 text-sm">
+                  <span class="loading loading-dots loading-sm"></span>
+                  <span x-text="$t('pay.waiting')"></span>
+                </div>
+              </div>
+            </template>
+
+            <!-- Success -->
+            <template x-if="state === 'paid'">
+              <div class="space-y-4">
+                <div class="alert alert-success">
+                  <i data-lucide="check-circle-2" class="size-5"></i>
+                  <div>
+                    <div class="font-semibold" x-text="$t('pay.success')"></div>
+                    <div class="text-sm" x-text="$t('pay.successDetail')"></div>
+                  </div>
+                </div>
+                <div class="rounded-box bg-base-200 p-4 text-center">
+                  <div class="text-sm text-base-content/60" x-text="$t('pay.creditsLabel')"></div>
+                  <div class="text-3xl font-bold" x-text="credits.toLocaleString()"></div>
+                </div>
+                <a class="btn btn-primary w-full" href="/" x-text="$t('pay.backToApp')">Back to Fetchly</a>
+              </div>
+            </template>
+
+            <!-- Error -->
+            <template x-if="error">
+              <div class="alert alert-error"><span x-text="error"></span></div>
+            </template>
+          </div>
+        </template>
+      </div>
+
+      <p class="mt-4 text-center text-xs text-base-content/50">
+        <a class="link link-hover" href="/" x-text="$t('pay.backToApp')">Back to Fetchly</a>
+      </p>
+    </div>
+  </body>
+</html>

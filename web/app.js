@@ -3,7 +3,7 @@ function app() {
     apiClient: window.apiClient, view: 'playground', documents: [], keys: [], loading: false, keysLoading: false,
     filters: {content: '', sitename: '', tags: ''}, pagination: {page: 1, page_size: 20, total: 0, pages: 0},
     detail: null, detailDialog: false, detailTab: 'body', showAuthDialog: false, authInput: '', showKeyDialog: false, newKeyName: '', tokenCache: {}, toast: '', toastType: 'success',
-    currentUser: null, showAccountDialog: false, accountMode: 'login', accountLoading: false, account: {email: '', password: '', displayName: ''},
+    currentUser: null,
     proxyDialog: false, proxyLoading: false, proxySaving: false, proxyUseEnvironment: false, proxyOriginalSnapshot: '', proxy: {enabled: false, scheme: 'http', server: '', port: '', username: '', password: '', clearCredentials: false, source: 'environment', usernameConfigured: false, passwordConfigured: false},
     playgroundMode: 'fetch', playground: {url: '', outputFormat: 'markdown', strategy: 'auto', timeout: 45, persist: false}, playgroundLoading: false, playgroundResponse: null, responseTab: 'body', showMcpDialog: false,
     locale: (window.FetchlyI18n && window.FetchlyI18n.detectLocale()) || 'en',
@@ -15,7 +15,15 @@ function app() {
       document.documentElement.setAttribute('lang', locale);
       this.$nextTick(() => lucide.createIcons());
     },
-    init() { document.documentElement.setAttribute('lang', this.locale); window.addEventListener('oma-auth-required', () => { this.showAuthDialog = true; }); window.addEventListener('load', () => lucide.createIcons(), {once: true}); this.loadCurrentUser(); },
+    authEnabled: false,
+    init() {
+      document.documentElement.setAttribute('lang', this.locale);
+      window.addEventListener('oma-auth-required', () => { this.showAuthDialog = true; });
+      window.addEventListener('load', () => lucide.createIcons(), {once: true});
+      this.loadCurrentUser(true);
+    },
+    loginHref() { const next = encodeURIComponent(window.location.pathname + window.location.search); return `/login?next=${next}`; },
+    goToLogin() { window.location.assign(this.loginHref()); },
     navigate(view) { this.view = view; if (view === 'pages') this.loadDocuments(1); if (view === 'keys') this.loadKeys(); },
     get playgroundMethod() { return this.playgroundMode === 'fetch' ? 'POST' : 'GET'; },
     get mcpConfig() { return JSON.stringify({mcpServers: {fetchly: {type: 'http', url: `${window.location.origin}/mcp`, headers: {Authorization: 'Bearer ${FETCHLY_API_TOKEN}'}}}}, null, 2); },
@@ -40,7 +48,7 @@ function app() {
       } catch (error) {
         const envelope = error.envelope;
         this.playgroundResponse = {ok: false, status: error.status, statusText: '', duration: Math.round(performance.now() - startedAt), data: envelope ? JSON.stringify({code: envelope.code, message: envelope.message, data: envelope.data ?? null}, null, 2) : (error.message || 'Request failed'), meta: envelope?.meta || {}};
-        if (error.status === 401) this.showAuthDialog = true;
+        if (error.status === 401) this.openAuthFlow();
       } finally {
         this.playgroundLoading = false;
         this.$nextTick(() => lucide.createIcons());
@@ -117,25 +125,20 @@ function app() {
     async copyPlaygroundBlock() { const content = this.responseTab === 'body' ? this.playgroundResponse?.data || '(empty response body)' : JSON.stringify(this.playgroundResponse?.meta || {}, null, 2); if (content) await this.copyText(content); },
     async copyDetailBlock() { const content = this.detailTab === 'body' ? this.detail?.content : JSON.stringify(this.detail?.page || {}, null, 2); if (content) await this.copyText(content); },
     saveKey() { if (!this.authInput.trim()) return; this.apiClient.setKey(this.authInput); this.authInput = ''; this.showAuthDialog = false; this.notify(this.$t('toast.apiKeySaved')); this.loadDocuments(1); },
-    openAccount(mode = 'login') { this.accountMode = mode; this.showAccountDialog = true; },
-    async submitAccount() {
-      if (this.accountLoading) return;
-      this.accountLoading = true;
-      const registering = this.accountMode === 'register';
-      try {
-        if (registering) await this.apiClient.auth.register({email: this.account.email, password: this.account.password, display_name: this.account.displayName || null});
-        await this.apiClient.auth.login({email: this.account.email, password: this.account.password});
-        await this.loadCurrentUser();
-        this.showAccountDialog = false;
-        this.account.password = '';
-        this.notify(registering ? this.$t('account.created') : this.$t('account.signedIn'));
-        this.loadDocuments(1);
-      } catch (error) { this.notify(error.message || this.$t('account.failed'), 'error'); }
-      finally { this.accountLoading = false; }
+    openAccount(mode = 'login') { window.location.assign(`/login?mode=${mode}&next=${encodeURIComponent(window.location.pathname + window.location.search)}`); },
+    async loadCurrentUser(promptOnLoggedOut = false) {
+      // Learn whether the deployment requires accounts. When auth is off
+      // (local/UAT), anonymous use is allowed and no login redirect happens.
+      try { const status = await this.apiClient.request('/api/auth/status'); this.authEnabled = !!(status.data && status.data.auth_enabled); } catch { this.authEnabled = false; }
+      try { const result = await this.apiClient.auth.me(); this.currentUser = result.data || null; } catch { this.currentUser = null; }
+      if (promptOnLoggedOut && this.authEnabled && !this.currentUser) this.goToLogin();
     },
-    async loadCurrentUser() { try { const result = await this.apiClient.auth.me(); this.currentUser = result.data || null; } catch { this.currentUser = null; } },
-    async logoutAccount() { try { await this.apiClient.auth.logout(); } catch {} this.currentUser = null; this.notify(this.$t('account.signedOut')); },
-    handleError(error) { if (error.status === 401) this.showAuthDialog = true; else this.notify(error.message || this.$t('toast.requestFailed'), 'error'); },
+    async logoutAccount() { try { await this.apiClient.auth.logout(); } catch {} this.currentUser = null; this.notify(this.$t('account.signedOut')); if (this.authEnabled) this.goToLogin(); },
+    handleError(error) { if (error.status === 401) this.openAuthFlow(); else this.notify(error.message || this.$t('toast.requestFailed'), 'error'); },
+    // Route a 401 to the right destination: a logged-out visitor is sent to the
+    // standalone sign-in page, while a logged-in caller lacking scope sees the
+    // API-key dialog (their session can't grant the missing scope).
+    openAuthFlow() { if (this.currentUser) { this.showAuthDialog = true; } else { this.goToLogin(); } },
     notify(message, type = 'success') { this.toast = message; this.toastType = type; setTimeout(() => { this.toast = ''; }, 3200); },
     truncate(value) { return value.length > 20 ? `${value.slice(0, 20)}…` : value; },
     formatDate(value) { if (!value) return '—'; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleString(); },

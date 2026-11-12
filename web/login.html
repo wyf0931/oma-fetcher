@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fetchly · Sign in</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" sizes="any" />
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script src="/i18n.js"></script>
+    <script src="/api-client.js?v=3"></script>
+    <style>
+      [x-cloak]{display:none!important}
+    </style>
+  </head>
+  <body class="min-h-screen bg-base-200 text-base-content grid place-items-center px-4">
+    <div x-data="loginPage()" x-init="init()" class="w-full max-w-md">
+      <div class="mb-6 flex items-center justify-center gap-3">
+        <div aria-hidden="true" class="grid size-10 place-items-center text-base-content"><i data-lucide="coffee" class="size-7"></i></div>
+        <span class="text-2xl font-semibold tracking-tight">Fetchly</span>
+      </div>
+      <div class="rounded-box border border-base-300 bg-base-100 p-6 shadow-sm sm:p-8">
+        <h1 class="text-xl font-semibold" x-text="mode === 'login' ? $t('account.loginTitle') : $t('account.registerTitle')">Sign in</h1>
+        <p class="mt-1 text-sm text-base-content/60" x-text="$t('account.description')"></p>
+
+        <div role="tablist" class="tabs tabs-box mt-5 w-full">
+          <button role="tab" class="tab flex-1" :class="mode === 'login' ? 'tab-active font-semibold text-base-content' : 'text-base-content/60 hover:text-base-content'" @click="mode = 'login'" x-text="$t('account.signIn')">Sign in</button>
+          <button role="tab" class="tab flex-1" :class="mode === 'register' ? 'tab-active font-semibold text-base-content' : 'text-base-content/60 hover:text-base-content'" @click="mode = 'register'" x-text="$t('account.register')">Register</button>
+        </div>
+
+        <form @submit.prevent="submit()" class="mt-5 space-y-4">
+          <label class="form-control w-full">
+            <span class="label py-1"><span class="label-text text-xs font-medium" x-text="$t('account.email')">Email</span></span>
+            <input class="input input-bordered input-md w-full" type="email" x-model.trim="email" :placeholder="$t('account.emailPlaceholder')" required autocomplete="email" />
+          </label>
+          <label class="form-control w-full" x-show="mode === 'register'" x-cloak>
+            <span class="label py-1"><span class="label-text text-xs font-medium" x-text="$t('account.displayName')">Display name</span></span>
+            <input class="input input-bordered input-md w-full" x-model.trim="displayName" :placeholder="$t('account.displayNamePlaceholder')" />
+          </label>
+          <label class="form-control w-full">
+            <span class="label py-1"><span class="label-text text-xs font-medium" x-text="$t('account.password')">Password</span></span>
+            <input class="input input-bordered input-md w-full" type="password" x-model="password" :placeholder="$t('account.passwordPlaceholder')" required autocomplete="current-password" />
+          </label>
+          <p class="min-h-5 text-sm text-error" x-text="error" x-cloak></p>
+          <button type="submit" class="btn btn-md btn-primary w-full" :disabled="loading">
+            <span x-show="loading" class="loading loading-spinner loading-xs"></span>
+            <span x-text="mode === 'login' ? $t('account.submitLogin') : $t('account.submitRegister')"></span>
+          </button>
+        </form>
+      </div>
+      <p class="mt-4 text-center text-xs text-base-content/50">
+        <a class="link link-hover" :href="backHref()" x-text="$t('account.backToApp') || 'Back to app'">Back to app</a>
+      </p>
+    </div>
+    <script src="/login.js?v=1"></script>
+  </body>
+</html>

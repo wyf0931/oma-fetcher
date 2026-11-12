@@ -10,7 +10,7 @@ from urllib.parse import quote, unquote, urlsplit
 from fastapi import Depends, FastAPI, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -48,7 +48,10 @@ logger = logging.getLogger("oma_fetcher.bootstrap")
 
 # Endpoints reachable without any credentials (open registration). They must be
 # checked before the auth middleware so first-time users can create accounts.
-AUTH_EXEMPT_PATHS = frozenset({"/api/auth/register", "/api/auth/login", "/api/auth/logout"})
+# The Alipay async-notify callback is also exempt: Alipay's servers POST it with
+# no cookie or bearer token. It authenticates itself via RSA2 signature
+# verification inside the handler, so the 401 gate must not block it.
+AUTH_EXEMPT_PATHS = frozenset({"/api/auth/register", "/api/auth/login", "/api/auth/logout", "/api/auth/status", "/api/billing/alipay/notify"})
 
 
 def envelope(code: int, message: str, data: Any = None, meta: dict | None = None, status_code: int = 200, headers: dict[str, str] | None = None) -> JSONResponse:
@@ -80,6 +83,10 @@ async def lifespan(_: FastAPI):
     if store.available:
         settings.apply_proxy_override(await asyncio.to_thread(store.get_app_setting, "proxy"))
         await bootstrap_admin()
+        try:
+            await asyncio.to_thread(billing.ensure_seed)
+        except StorageError as exc:
+            logger.warning("sku seed skipped: storage unavailable (%s)", exc)
     # A fresh Streamable HTTP app (and session manager) per lifespan keeps the
     # endpoint restartable, while the manager itself only supports one run().
     mcp_http.app = mcp_server.streamable_http_app(streamable_http_path=MCP_HTTP_PATH, transport_security=transport_security())
@@ -315,6 +322,33 @@ async def api_authentication(request: Request, call_next):
     return await call_next(request)
 
 
+# HTML document paths that make up the app shell. When auth is on, an
+# unauthenticated browser navigating here is redirected to the standalone login
+# page so the system UI is never rendered behind a modal.
+APP_SHELL_PATHS = frozenset({"/", "/index.html"})
+
+
+@app.middleware("http")
+async def app_shell_login_gate(request: Request, call_next):
+    """Redirect logged-out browsers from the app shell to /login.
+
+    Only applies when ``API_AUTH_ENABLED=on`` (local/UAT stays open), only to
+    HTML document navigations (not XHR/static assets), and only for the app
+    shell paths. The login page, static assets, and /api/* are unaffected.
+    """
+    if (
+        settings.api_auth_enabled
+        and request.method == "GET"
+        and request.url.path in APP_SHELL_PATHS
+        and "text/html" in request.headers.get("accept", "")
+        and resolve_session_principal(request) is None
+    ):
+        from urllib.parse import quote
+
+        return RedirectResponse(url=f"/login?next={quote(request.url.path)}", status_code=302)
+    return await call_next(request)
+
+
 def current_principal(request: Request) -> Principal | None:
     """Resolve the caller for business endpoints, cached on request.state.
 
@@ -429,6 +463,17 @@ async def login_account(request: Request, payload: LoginRequest):
     response = envelope(0, "ok", {"user": user})
     response.set_cookie(**session_cookie(token))
     return response
+
+
+@app.get("/api/auth/status", response_model=ApiEnvelope)
+async def auth_status():
+    """Report whether account authentication is required for the Web UI.
+
+    The login page and app shell consult this to decide whether to force a
+    redirect to ``/login``. When auth is off (local/UAT), anonymous access is
+    allowed and no redirect happens.
+    """
+    return envelope(0, "ok", {"auth_enabled": settings.api_auth_enabled})
 
 
 @app.post("/api/auth/logout", response_model=ApiEnvelope)
@@ -686,6 +731,15 @@ async def get_sitemap(request: Request, url: str):
     result = await service.get_sitemap(url)
     return envelope(result.code, result.message, result.data, result.meta, status_code=result.status_code)
 
+
+# Billing is imported last: it does ``from .main import envelope, store`` at module
+# scope, which only resolves once every name above is defined. Its router must be
+# included BEFORE the catch-all static mount below, otherwise "/" swallows
+# /api/billing/* requests. Startup SKU seeding reads billing at request time, so
+# late binding here is safe.
+from . import billing  # noqa: E402
+
+app.include_router(billing.router)
 
 WEB_ROOT = Path(__file__).resolve().parent.parent / "web"
 if WEB_ROOT.is_dir():

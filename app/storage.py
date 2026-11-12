@@ -542,6 +542,240 @@ class DocumentStore:
         except sqlite3.Error as exc:
             raise StorageError(f"api key revoke failed: {str(exc)[:180]}") from exc
 
+    # ------------------------------------------------------------------
+    # Billing: SKU catalog, orders, payments, credit ledger.
+    # Amounts are integer cents. Multi-statement transitions run inside an
+    # explicit BEGIN IMMEDIATE transaction so order->payment->grant is atomic.
+    # ------------------------------------------------------------------
+
+    def seed_sku(self, *, code: str, name: str, units: int, price_cents: int, currency: str = "CNY", payment_provider: str = "alipay", sort_order: int = 0, active: int = 1) -> int:
+        """Insert a SKU if its code is new; return its id either way.
+
+        ``active=0`` seeds a hidden SKU (e.g. a sandbox test pack) that is never
+        listed but can still be purchased by code.
+        """
+        self._require_available()
+        now = datetime.now(UTC).isoformat()
+        try:
+            with self._connect() as connection:
+                existing = connection.execute("SELECT id FROM skus WHERE code = ?", (code,)).fetchone()
+                if existing:
+                    return int(existing["id"])
+                cursor = connection.execute(
+                    """
+                    INSERT INTO skus (code, name, unit, units, price_cents, currency, payment_provider, active, sort_order, created_at, updated_at)
+                    VALUES (?, ?, 'fetch', ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (code, name, units, price_cents, currency, payment_provider, int(active), sort_order, now, now),
+                )
+                return _inserted_id(cursor)
+        except sqlite3.Error as exc:
+            raise StorageError(f"sku seed failed: {str(exc)[:180]}") from exc
+
+    def get_sku(self, sku_id: int) -> dict[str, Any] | None:
+        self._require_available()
+        row = self._connect().execute("SELECT * FROM skus WHERE id = ?", (sku_id,)).fetchone()
+        return dict(row) if row else None
+
+    def get_sku_by_code(self, code: str, *, include_hidden: bool = False) -> dict[str, Any] | None:
+        """Fetch a SKU by code. Hidden (active=0) SKUs require ``include_hidden``."""
+        self._require_available()
+        if include_hidden:
+            row = self._connect().execute("SELECT * FROM skus WHERE code = ?", (code,)).fetchone()
+        else:
+            row = self._connect().execute("SELECT * FROM skus WHERE code = ? AND active = 1", (code,)).fetchone()
+        return dict(row) if row else None
+
+    def list_active_skus(self) -> list[dict[str, Any]]:
+        self._require_available()
+        rows = self._connect().execute("SELECT * FROM skus WHERE active = 1 ORDER BY sort_order, id").fetchall()
+        return [dict(row) for row in rows]
+
+    def create_order(self, *, user_id: int, sku: dict[str, Any], quantity: int, out_trade_no: str, idempotency_key: str | None = None) -> dict[str, Any]:
+        """Create a pending order, or return the existing one for an idempotency key.
+
+        When ``idempotency_key`` matches an existing order for the user, that order is
+        returned unchanged so a client retry never double-charges.
+        """
+        self._require_available()
+        now = datetime.now(UTC).isoformat()
+        unit_price = int(sku["price_cents"])
+        amount = unit_price * int(quantity)
+        try:
+            with self._connect() as connection:
+                if idempotency_key:
+                    existing = connection.execute(
+                        "SELECT * FROM orders WHERE user_id = ? AND idempotency_key = ?",
+                        (user_id, idempotency_key),
+                    ).fetchone()
+                    if existing:
+                        return dict(existing)
+                cursor = connection.execute(
+                    """
+                    INSERT INTO orders (user_id, sku_id, quantity, unit_price_cents, amount_cents, currency, status, out_trade_no, idempotency_key, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)
+                    """,
+                    (user_id, int(sku["id"]), int(quantity), unit_price, amount, sku.get("currency", "CNY"), out_trade_no, idempotency_key, now, now),
+                )
+                order_id = _inserted_id(cursor)
+        except sqlite3.IntegrityError as exc:
+            raise StorageError(f"order conflict: {str(exc)[:180]}") from exc
+        except sqlite3.Error as exc:
+            raise StorageError(f"order creation failed: {str(exc)[:180]}") from exc
+        created = self.get_order(order_id)
+        if created is None:
+            raise StorageError("order row vanished after insert")
+        return created
+
+    def get_order(self, order_id: int) -> dict[str, Any] | None:
+        self._require_available()
+        row = self._connect().execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+        return dict(row) if row else None
+
+    def get_order_by_out_trade_no(self, out_trade_no: str) -> dict[str, Any] | None:
+        self._require_available()
+        row = self._connect().execute("SELECT * FROM orders WHERE out_trade_no = ?", (out_trade_no,)).fetchone()
+        return dict(row) if row else None
+
+    def list_orders(self, *, user_id: int, limit: int = 50) -> list[dict[str, Any]]:
+        self._require_available()
+        rows = self._connect().execute(
+            "SELECT * FROM orders WHERE user_id = ? ORDER BY id DESC LIMIT ?",
+            (user_id, int(limit)),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def mark_order_paid(self, *, order_id: int, trade_no: str, trade_status: str, amount_cents: int, notify_raw: dict[str, Any], verified: bool) -> dict[str, Any] | None:
+        """Idempotently record an Alipay success and grant credits exactly once.
+
+        Returns the refreshed order when this call performed the pending->paid
+        transition and the credit grant; returns ``None`` when the order was already
+        paid (a replayed notify), so the caller can acknowledge without re-granting.
+        """
+        self._require_available()
+        now = datetime.now(UTC).isoformat()
+        try:
+            with self._connect() as connection:
+                connection.execute("BEGIN IMMEDIATE")
+                order = connection.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+                if order is None:
+                    raise StorageError("order not found")
+                if order["status"] == "paid":
+                    return None  # already granted; this notify is a duplicate
+                sku = connection.execute("SELECT units FROM skus WHERE id = ?", (order["sku_id"],)).fetchone()
+                units_total = int(order["quantity"]) * (int(sku["units"]) if sku else 0)
+                connection.execute(
+                    """
+                    INSERT INTO payments (order_id, provider, provider_trade_no, notify_id, trade_status, amount_cents, currency, raw_json, verified, created_at)
+                    VALUES (?, 'alipay', ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        order_id,
+                        trade_no,
+                        notify_raw.get("notify_id"),
+                        trade_status,
+                        amount_cents,
+                        order["currency"],
+                        self._json(notify_raw),
+                        1 if verified else 0,
+                        now,
+                    ),
+                )
+                connection.execute(
+                    "UPDATE orders SET status = 'paid', paid_at = ?, updated_at = ?, credits_granted = ? WHERE id = ? AND status = 'pending'",
+                    (now, now, units_total, order_id),
+                )
+                connection.execute(
+                    "INSERT INTO credit_ledger (user_id, delta, reason, order_id, idempotency_key, created_at) VALUES (?, ?, 'grant', ?, ?, ?)",
+                    (int(order["user_id"]), units_total, order_id, f"grant:{order_id}", now),
+                )
+        except sqlite3.IntegrityError as exc:
+            # Unique (order_id, reason='grant') hit => a concurrent notify already granted.
+            raise StorageError(f"payment already processed: {str(exc)[:180]}") from exc
+        except sqlite3.Error as exc:
+            raise StorageError(f"mark paid failed: {str(exc)[:180]}") from exc
+        return self.get_order(order_id)
+
+    def record_payment_event(self, *, order_id: int, trade_no: str, notify_id: str | None, trade_status: str, amount_cents: int, notify_raw: dict[str, Any], verified: bool) -> bool:
+        """Persist a non-success notify (e.g. TRADE_CLOSED) idempotently. True if new."""
+        self._require_available()
+        now = datetime.now(UTC).isoformat()
+        try:
+            with self._connect() as connection:
+                cursor = connection.execute(
+                    """
+                    INSERT OR IGNORE INTO payments (order_id, provider, provider_trade_no, notify_id, trade_status, amount_cents, currency, raw_json, verified, created_at)
+                    VALUES (?, 'alipay', ?, ?, ?, ?, 'CNY', ?, ?, ?)
+                    """,
+                    (order_id, trade_no, notify_id, trade_status, amount_cents, self._json(notify_raw), 1 if verified else 0, now),
+                )
+                return cursor.rowcount > 0
+        except sqlite3.Error as exc:
+            raise StorageError(f"record payment event failed: {str(exc)[:180]}") from exc
+
+    def mark_order_closed(self, *, order_id: int) -> None:
+        self._require_available()
+        now = datetime.now(UTC).isoformat()
+        try:
+            with self._connect() as connection:
+                connection.execute(
+                    "UPDATE orders SET status = 'closed', updated_at = ? WHERE id = ? AND status = 'pending'",
+                    (now, order_id),
+                )
+        except sqlite3.Error as exc:
+            raise StorageError(f"close order failed: {str(exc)[:180]}") from exc
+
+    def credit_balance(self, user_id: int) -> int:
+        self._require_available()
+        row = self._connect().execute("SELECT COALESCE(SUM(delta), 0) AS bal FROM credit_ledger WHERE user_id = ?", (user_id,)).fetchone()
+        return int(row["bal"]) if row else 0
+
+    def grant_credits(self, *, user_id: int, order_id: int, units: int) -> None:
+        """Grant units once per order; safe to call repeatedly (no-op on replay)."""
+        self._require_available()
+        now = datetime.now(UTC).isoformat()
+        try:
+            with self._connect() as connection:
+                connection.execute(
+                    "INSERT OR IGNORE INTO credit_ledger (user_id, delta, reason, order_id, idempotency_key, created_at) VALUES (?, ?, 'grant', ?, ?, ?)",
+                    (user_id, int(units), order_id, f"grant:{order_id}", now),
+                )
+        except sqlite3.Error as exc:
+            raise StorageError(f"grant failed: {str(exc)[:180]}") from exc
+
+    def consume_credit(self, *, user_id: int, fetch_id: int, units: int = 1) -> bool:
+        """Atomically consume ``units`` if the user has balance. Returns True on success.
+
+        The balance check runs under BEGIN IMMEDIATE, so concurrent fetches cannot
+        drive the balance negative. The unique (fetch_id, 'consume') index makes a
+        replayed consume for the same fetch a no-op that still returns True, while a
+        genuinely insufficient balance returns False.
+        """
+        self._require_available()
+        now = datetime.now(UTC).isoformat()
+        try:
+            with self._connect() as connection:
+                connection.execute("BEGIN IMMEDIATE")
+                existing = connection.execute(
+                    "SELECT id FROM credit_ledger WHERE fetch_id = ? AND reason = 'consume'",
+                    (fetch_id,),
+                ).fetchone()
+                if existing is not None:
+                    return True  # already consumed this fetch; idempotent replay
+                row = connection.execute(
+                    "SELECT COALESCE(SUM(delta), 0) AS bal FROM credit_ledger WHERE user_id = ?",
+                    (user_id,),
+                ).fetchone()
+                if int(row["bal"]) < int(units):
+                    return False
+                connection.execute(
+                    "INSERT INTO credit_ledger (user_id, delta, reason, fetch_id, idempotency_key, created_at) VALUES (?, ?, 'consume', ?, ?, ?)",
+                    (user_id, -int(units), fetch_id, f"consume:{fetch_id}", now),
+                )
+                return True
+        except sqlite3.Error as exc:
+            raise StorageError(f"consume failed: {str(exc)[:180]}") from exc
+
     def get_route(self, hostname: str, target_kind: str) -> FetchRoute | None:
         self._require_available()
         hostname = normalize_route_hostname(hostname)
