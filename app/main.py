@@ -330,12 +330,18 @@ APP_SHELL_PATHS = frozenset({"/", "/index.html"})
 
 @app.middleware("http")
 async def app_shell_login_gate(request: Request, call_next):
-    """Redirect logged-out browsers from the app shell to /login.
+    """Redirect /login aliases and logged-out app-shell navigations.
 
-    Only applies when ``API_AUTH_ENABLED=on`` (local/UAT stays open), only to
-    HTML document navigations (not XHR/static assets), and only for the app
-    shell paths. The login page, static assets, and /api/* are unaffected.
+    Only the app-shell gate applies when ``API_AUTH_ENABLED=on`` (local/UAT
+    stays open), and only to HTML document navigations (not XHR/static assets).
+    The login page, static assets, and /api/* are unaffected.
     """
+    # UI links and the auth middleware use the clean /login URL, while the
+    # standalone page is a static file named login.html. Preserve query params
+    # (especially `next`) when translating the route to that file.
+    if request.method == "GET" and request.url.path == "/login":
+        return RedirectResponse(url=str(request.url.replace(path="/login.html")), status_code=302)
+
     if (
         settings.api_auth_enabled
         and request.method == "GET"
