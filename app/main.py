@@ -340,7 +340,8 @@ async def app_shell_login_gate(request: Request, call_next):
     # standalone page is a static file named login.html. Preserve query params
     # (especially `next`) when translating the route to that file.
     if request.method == "GET" and request.url.path == "/login":
-        return RedirectResponse(url=str(request.url.replace(path="/login.html")), status_code=302)
+        query = f"?{request.url.query}" if request.url.query else ""
+        return RedirectResponse(url=f"/login.html{query}", status_code=302)
 
     if (
         settings.api_auth_enabled

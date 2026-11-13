@@ -9,6 +9,7 @@ def test_login_alias_redirects_to_static_page_preserving_query() -> None:
         page = client.get(response.headers["location"])
 
     assert response.status_code == 302
+    assert response.headers["location"].startswith("/login.html?")
     assert response.headers["location"].endswith("/login.html?next=%2F")
     assert page.status_code == 200
     assert "loginPage()" in page.text
